@@ -114,7 +114,7 @@ Figures~1--2 numerically verify Eqs.\,2--5 in a 3-hidden-layer ReLU MLP trained 
 \begin{figure}[h!]
 \centering
 \includegraphics[width=0.55\textwidth]{fig_width_sweep.pdf}
-\caption{\textbf{The wider the network, the more faithfully activity changes track the activity-space loss gradient.}  $r$ of the diagonal approximation (Eq.\,5) as a function of hidden-layer width.  At width\,=\,4 the approximation fails; by width\,$\sim$\,32 it is reliable ($r>0.9$).  Shaded regions: $\pm1$ s.d.\ across seeds.}
+\caption{\textbf{The wider the network, the more faithfully activity changes track the activity-space loss gradient.}  Pearson $r$ between actual $\Delta A$ and $-\partial L/\partial A$ as a function of hidden-layer width.  Dead ReLU neurons excluded.  Shaded regions: $\pm1$ s.d.\ across seeds.}
 \end{figure}
 
 \end{document}

@@ -295,7 +295,7 @@ def plot_dynamics(ax, history, show_loss_label=True):
     steps = history['step']
     ax.plot(steps, history['corr_ground'], '-', color='#aaa', linewidth=0.8, label=r'$r$ ($J\cdot\Delta W$)', alpha=0.7)
     ax.plot(steps, history['corr_full'], '-', color='#2563eb', linewidth=1.2, label=r'$r$ ($\Theta\cdot\partial L$)')
-    ax.plot(steps, history['corr_diag'], '-', color='#059669', linewidth=1.2, label=r'$r$ (diag $\Theta$)')
+    ax.plot(steps, history['corr_neg'], '-', color='#d97706', linewidth=1.2, label=r'$r$ ($-dL/dA$)')
 
     ax2 = ax.twinx()
     ax2.plot(steps, history['loss'], '--', color='#d44a', linewidth=0.8, label='loss')
@@ -425,25 +425,20 @@ neg_final_std = np.array([np.std(width_neg_final[w]) for w in widths])
 neg_median_mean = np.array([np.mean(width_neg_median[w]) for w in widths])
 neg_median_std = np.array([np.std(width_neg_median[w]) for w in widths])
 
-ax.fill_between(w_arr, final_mean - final_std, final_mean + final_std,
-                color='#059669', alpha=0.15)
-ax.plot(w_arr, final_mean, 'o-', color='#059669', linewidth=1.5, markersize=4,
-        label=r'diag $\Theta$: late $r$')
-
 ax.fill_between(w_arr, neg_final_mean - neg_final_std, neg_final_mean + neg_final_std,
                 color='#d97706', alpha=0.15)
 ax.plot(w_arr, neg_final_mean, 'o-', color='#d97706', linewidth=1.5, markersize=4,
-        label=r'raw $-dL/dA$: late $r$')
+        label=r'late training $r$')
 
-ax.fill_between(w_arr, median_mean - median_std, median_mean + median_std,
+ax.fill_between(w_arr, neg_median_mean - neg_median_std, neg_median_mean + neg_median_std,
                 color='#2563eb', alpha=0.15)
-ax.plot(w_arr, median_mean, 's--', color='#2563eb', linewidth=1.2, markersize=3.5,
-        label=r'diag $\Theta$: median $r$')
+ax.plot(w_arr, neg_median_mean, 's--', color='#2563eb', linewidth=1.2, markersize=3.5,
+        label=r'median $r$')
 
 ax.axhline(1, color='#e8e5dd', linestyle='--', linewidth=0.5)
 ax.axhline(0, color='#e8e5dd', linewidth=0.5)
 ax.set_xlabel('hidden layer width', fontsize=8)
-ax.set_ylabel(r'Pearson $r$ vs actual $\Delta A$', fontsize=8)
+ax.set_ylabel(r'$r(\Delta A,\; -\partial L/\partial A)$', fontsize=8)
 ax.tick_params(labelsize=7)
 ax.legend(fontsize=7, loc='lower right', framealpha=0.8)
 ax.set_ylim(-0.5, 1.1)
