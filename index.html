@@ -449,7 +449,7 @@ function App() {
     const aBefore = [];
     for (let l = 1; l <= L; l++)
       for (let i = 0; i < fwd.a[l].length; i++) aBefore.push(fwd.a[l][i]);
-    const { groundTruth, fullThetaPred, diagPred, negGradA, Theta, totalN, neuronCounts } =
+    const { groundTruth, fullThetaPred, diagPred, negGradA, Theta, totalN, neuronCounts, active } =
       computeAllPredictions(net, fwd, dLdW, dLdA, Y[bi], lr);
     for (let l = 0; l < L; l++)
       for (let i = 0; i < net.W[l].length; i++) net.W[l][i] -= lr * dLdW[l][i];
