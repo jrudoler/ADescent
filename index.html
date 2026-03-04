@@ -234,7 +234,7 @@ function computeAllPredictions(net, fwd, dLdW, dLdA, target, eta) {
   }
 
   let Theta = null;
-  if (totalN <= 200) {
+  if (totalN <= 500) {
     Theta = new Float64Array(totalN * totalN);
     for (let i = 0; i < totalN; i++) {
       for (let j = i; j < totalN; j++) {
@@ -310,25 +310,35 @@ function drawHeatmap(canvas, Theta, totalN, neuronCounts) {
   }
 }
 
-function drawScatter(canvas, pred, actual, neuronCounts, label) {
+function drawScatter(canvas, pred, actual, neuronCounts, label, independentAxes) {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
   const pad = 32;
   ctx.clearRect(0, 0, W, H);
   if (!actual || actual.length === 0) return;
-  const allVals = [...pred, ...actual];
-  let maxAbs = 0;
-  for (const v of allVals) if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v);
-  if (maxAbs === 0) maxAbs = 1;
-  maxAbs *= 1.15;
-  const toX = v => pad + (v / maxAbs + 1) / 2 * (W - 2 * pad);
-  const toY = v => (H - pad) - (v / maxAbs + 1) / 2 * (H - 2 * pad);
+  let maxX = 0, maxY = 0;
+  for (const v of pred) if (Math.abs(v) > maxX) maxX = Math.abs(v);
+  for (const v of actual) if (Math.abs(v) > maxY) maxY = Math.abs(v);
+  if (!independentAxes) { maxX = Math.max(maxX, maxY); maxY = maxX; }
+  if (maxX === 0) maxX = 1; if (maxY === 0) maxY = 1;
+  maxX *= 1.15; maxY *= 1.15;
+  const toX = v => pad + (v / maxX + 1) / 2 * (W - 2 * pad);
+  const toY = v => (H - pad) - (v / maxY + 1) / 2 * (H - 2 * pad);
   ctx.strokeStyle = "#ddd8cc"; ctx.lineWidth = 0.5;
   ctx.beginPath(); ctx.moveTo(toX(0), pad); ctx.lineTo(toX(0), H - pad); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(pad, toY(0)); ctx.lineTo(W - pad, toY(0)); ctx.stroke();
   ctx.strokeStyle = "#b0a890"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
-  ctx.beginPath(); ctx.moveTo(toX(-maxAbs), toY(-maxAbs)); ctx.lineTo(toX(maxAbs), toY(maxAbs)); ctx.stroke();
+  if (independentAxes) {
+    // best-fit line through origin: slope = sum(x*y)/sum(x*x)
+    let sxy = 0, sxx = 0;
+    for (let i = 0; i < pred.length; i++) { sxy += pred[i] * actual[i]; sxx += pred[i] * pred[i]; }
+    const slope = sxx > 1e-30 ? sxy / sxx : 1;
+    const x0 = -maxX, x1 = maxX;
+    ctx.beginPath(); ctx.moveTo(toX(x0), toY(slope * x0)); ctx.lineTo(toX(x1), toY(slope * x1)); ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.moveTo(toX(-maxX), toY(-maxY)); ctx.lineTo(toX(maxX), toY(maxY)); ctx.stroke();
+  }
   ctx.setLineDash([]);
   const colors = ["#2563eb", "#0891b2", "#059669", "#d97706"];
   let idx = 0;
@@ -362,9 +372,8 @@ function corrfn(actual, pred) {
 // ======================== COMPONENT ========================
 
 const LCOLORS = ["#2563eb", "#0891b2", "#059669", "#d97706"];
-const MODES = ["negGradA", "diagBP", "fullTheta", "ground"];
+const MODES = ["negGradA", "diagBP", "fullTheta"];
 const MODE_LABELS = {
-  ground: "J\u00B7\u0394W (exact)",
   fullTheta: "\u0398\u00B7\u2202L (kernel)",
   diagBP: "diag \u0398 (scaled)",
   negGradA: "\u2212dL/dA (raw)",
@@ -473,7 +482,7 @@ function App() {
       const { preds, actual, neuronCounts, Theta, totalN, totalLoss, r2G, r2F, r2D } = result;
       if (Theta) drawHeatmap(heatRef.current, Theta, totalN, neuronCounts);
       lastData.current = { preds, actual, neuronCounts };
-      drawScatter(scatRef.current, preds[scatterMode], actual, neuronCounts, MODE_LABELS[scatterMode]);
+      drawScatter(scatRef.current, preds[scatterMode], actual, neuronCounts, MODE_LABELS[scatterMode], scatterMode === "negGradA");
       setStep(stepRef.current);
       setMetrics({ loss: totalLoss, r2G, r2F, r2D });
       setHistory(h => [...h, {
@@ -495,7 +504,7 @@ function App() {
   useEffect(() => {
     if (lastData.current) {
       const { preds, actual, neuronCounts } = lastData.current;
-      drawScatter(scatRef.current, preds[scatterMode], actual, neuronCounts, MODE_LABELS[scatterMode]);
+      drawScatter(scatRef.current, preds[scatterMode], actual, neuronCounts, MODE_LABELS[scatterMode], scatterMode === "negGradA");
     }
   }, [scatterMode]);
 
@@ -631,7 +640,7 @@ function App() {
                       color: scatterMode === mode ? "#fff" : "#666",
                       cursor: "pointer", fontFamily: "monospace", fontSize: 9,
                     }}>
-                    {mode === "negGradA" ? "raw" : mode === "diagBP" ? "scaled" : mode === "fullTheta" ? "kernel" : "exact"}
+                    {mode === "negGradA" ? "raw" : mode === "diagBP" ? "scaled" : "kernel"}
                   </button>
                 ))}
               </div>
@@ -640,7 +649,6 @@ function App() {
               {scatterMode === "negGradA" && "Raw activity gradient \u2014 the experimentally testable prediction"}
               {scatterMode === "diagBP" && "Gradient scaled by per-neuron \u0398\u1D62\u1D62 \u2014 corrects for parameter count"}
               {scatterMode === "fullTheta" && "Full kernel prediction \u2014 includes cross-neuron coupling"}
-              {scatterMode === "ground" && "Exact first-order Taylor \u2014 sanity check, should be perfect"}
             </div>
             <canvas ref={scatRef} width={340} height={340}
               style={{ width: "100%", maxWidth: 340, height: "auto", aspectRatio: "1", border: "1px solid #eee" }} />
