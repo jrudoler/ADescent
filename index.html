@@ -677,9 +677,9 @@ function App() {
               </div>
             </div>
             <div style={{ fontSize: 10, color: "#888", marginBottom: 6, fontFamily: "monospace" }}>
-              {scatterMode === "negGradA" && "Raw activity gradient \u2014 the experimentally testable prediction"}
-              {scatterMode === "diagBP" && "Gradient scaled by per-neuron \u0398\u1D62\u1D62 \u2014 corrects for parameter count"}
-              {scatterMode === "fullTheta" && "Full kernel prediction \u2014 includes cross-neuron coupling"}
+              {scatterMode === "negGradA" && "Raw activity gradient \u2014 the experimentally testable prediction (active neurons only)"}
+              {scatterMode === "diagBP" && "Gradient scaled by per-neuron \u0398\u1D62\u1D62 \u2014 corrects for parameter count (active neurons only)"}
+              {scatterMode === "fullTheta" && "Full kernel prediction \u2014 includes cross-neuron coupling (active neurons only)"}
             </div>
             <canvas ref={scatRef} width={340} height={340}
               style={{ width: "100%", maxWidth: 340, height: "auto", aspectRatio: "1", border: "1px solid #eee" }} />
