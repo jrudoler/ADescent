@@ -354,6 +354,10 @@ function drawScatter(canvas, pred, actual, neuronCounts, label, independentAxes)
   ctx.fillText("predicted (" + label + ")", W / 2, H - 6);
   ctx.save(); ctx.translate(11, H / 2); ctx.rotate(-Math.PI / 2);
   ctx.fillText("actual \u0394A", 0, 0); ctx.restore();
+  // Show correlation
+  const r = corrfn(actual, pred);
+  ctx.fillStyle = "#2a2a2e"; ctx.font = "bold 12px monospace"; ctx.textAlign = "right";
+  ctx.fillText("r = " + r.toFixed(3), W - pad, pad - 8);
 }
 
 function corrfn(actual, pred) {
