@@ -158,7 +158,7 @@ def compute_jacobian_and_predictions(sizes, W, a, h, dLdW, dLdA, target, eta):
 
     Theta = J @ J.T
 
-    return groundTruth, fullThetaPred, diagPred, negGradA, Theta, neuron_counts, layer_offsets
+    return groundTruth, fullThetaPred, diagPred, negGradA, Theta, neuron_counts, layer_offsets, active
 
 def corr(actual, pred):
     if len(actual) < 2:
@@ -176,7 +176,7 @@ def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
     X, Y = make_bar_images(20)
     B = len(X)
     
-    history = {'step': [], 'loss': [], 'corr_ground': [], 'corr_full': [], 'corr_diag': []}
+    history = {'step': [], 'loss': [], 'corr_ground': [], 'corr_full': [], 'corr_diag': [], 'corr_neg': []}
     last_snap = None
 
     for step in range(n_steps):
@@ -188,7 +188,7 @@ def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
 
         if do_diag:
             a_before = np.concatenate([a[l] for l in range(1, len(W)+1)])
-            gt, fp, dp, ng, Theta, nc, lo = compute_jacobian_and_predictions(
+            gt, fp, dp, ng, Theta, nc, lo, active = compute_jacobian_and_predictions(
                 sizes, W, a, h, dLdW, dLdA, Y[bi], eta)
 
             for l in range(len(W)):
@@ -196,11 +196,17 @@ def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
 
             a2, _ = forward(sizes, W, X[bi])
             a_after = np.concatenate([a2[l] for l in range(1, len(W)+1)])
-            deltaA = a_after - a_before
+            deltaA_full = a_after - a_before
+
+            # Filter to active neurons only
+            mask = active > 0
+            deltaA = deltaA_full[mask]
+            gt = gt[mask]; fp = fp[mask]; dp = dp[mask]; ng = ng[mask]
 
             cg = corr(deltaA, gt)
             cf = corr(deltaA, fp)
             cd = corr(deltaA, dp)
+            cn = corr(deltaA, ng)
 
             loss = 0
             for b in range(B):
@@ -212,10 +218,20 @@ def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
             history['corr_ground'].append(cg)
             history['corr_full'].append(cf)
             history['corr_diag'].append(cd)
+            history['corr_neg'].append(cn)
+
+            # Filter Theta and neuron counts for snapshot
+            active_idx = np.where(mask)[0]
+            Theta_filt = Theta[np.ix_(active_idx, active_idx)]
+            nc_filt = []
+            idx = 0
+            for count in nc:
+                nc_filt.append(int(np.sum(mask[idx:idx+count])))
+                idx += count
 
             last_snap = {
                 'deltaA': deltaA, 'gt': gt, 'fp': fp, 'dp': dp, 'ng': ng,
-                'Theta': Theta, 'nc': nc, 'lo': lo, 'step': step
+                'Theta': Theta_filt, 'nc': nc_filt, 'lo': lo, 'step': step
             }
         else:
             for l in range(len(W)):
@@ -378,6 +394,8 @@ diag_every_sweep = 40
 # For each width, collect median corr of diagonal approx over training, per seed
 width_corr_median = {w: [] for w in widths}
 width_corr_final = {w: [] for w in widths}
+width_neg_median = {w: [] for w in widths}
+width_neg_final = {w: [] for w in widths}
 
 for w in widths:
     print(f"  Width sweep: w={w} ...", flush=True)
@@ -388,6 +406,9 @@ for w in widths:
         corr_vals = h['corr_diag']
         width_corr_median[w].append(np.median(corr_vals))
         width_corr_final[w].append(np.mean(corr_vals[-5:]))
+        neg_vals = h['corr_neg']
+        width_neg_median[w].append(np.median(neg_vals))
+        width_neg_final[w].append(np.mean(neg_vals[-5:]))
 
 # Compute mean and std across seeds
 w_arr = np.array(widths)
@@ -399,20 +420,30 @@ final_std = np.array([np.std(width_corr_final[w]) for w in widths])
 fig2, ax = plt.subplots(figsize=(3.8, 2.8), dpi=200)
 fig2.patch.set_facecolor('#faf9f6')
 
+neg_final_mean = np.array([np.mean(width_neg_final[w]) for w in widths])
+neg_final_std = np.array([np.std(width_neg_final[w]) for w in widths])
+neg_median_mean = np.array([np.mean(width_neg_median[w]) for w in widths])
+neg_median_std = np.array([np.std(width_neg_median[w]) for w in widths])
+
 ax.fill_between(w_arr, final_mean - final_std, final_mean + final_std,
                 color='#059669', alpha=0.15)
 ax.plot(w_arr, final_mean, 'o-', color='#059669', linewidth=1.5, markersize=4,
-        label=r'late training $r$')
+        label=r'diag $\Theta$: late $r$')
+
+ax.fill_between(w_arr, neg_final_mean - neg_final_std, neg_final_mean + neg_final_std,
+                color='#d97706', alpha=0.15)
+ax.plot(w_arr, neg_final_mean, 'o-', color='#d97706', linewidth=1.5, markersize=4,
+        label=r'raw $-dL/dA$: late $r$')
 
 ax.fill_between(w_arr, median_mean - median_std, median_mean + median_std,
                 color='#2563eb', alpha=0.15)
 ax.plot(w_arr, median_mean, 's--', color='#2563eb', linewidth=1.2, markersize=3.5,
-        label=r'median $r$')
+        label=r'diag $\Theta$: median $r$')
 
 ax.axhline(1, color='#e8e5dd', linestyle='--', linewidth=0.5)
 ax.axhline(0, color='#e8e5dd', linewidth=0.5)
 ax.set_xlabel('hidden layer width', fontsize=8)
-ax.set_ylabel(r'$r$ (diagonal $\Theta$ approximation)', fontsize=8)
+ax.set_ylabel(r'Pearson $r$ vs actual $\Delta A$', fontsize=8)
 ax.tick_params(labelsize=7)
 ax.legend(fontsize=7, loc='lower right', framealpha=0.8)
 ax.set_ylim(-0.5, 1.1)
