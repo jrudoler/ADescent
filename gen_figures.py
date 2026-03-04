@@ -293,9 +293,7 @@ def plot_scatter(ax, pred, actual, neuron_counts, label, eq_label):
 
 def plot_dynamics(ax, history, show_loss_label=True):
     steps = history['step']
-    ax.plot(steps, history['corr_ground'], '-', color='#aaa', linewidth=0.8, label=r'$r$ ($J\cdot\Delta W$)', alpha=0.7)
-    ax.plot(steps, history['corr_full'], '-', color='#2563eb', linewidth=1.2, label=r'$r$ ($\Theta\cdot\partial L$)')
-    ax.plot(steps, history['corr_neg'], '-', color='#d97706', linewidth=1.2, label=r'$r$ ($-dL/dA$)')
+    ax.plot(steps, history['corr_neg'], '-', color='#d97706', linewidth=1.2, label=r'$r(\Delta A,\;-dL/dA)$')
 
     ax2 = ax.twinx()
     ax2.plot(steps, history['loss'], '--', color='#d44a', linewidth=0.8, label='loss')
