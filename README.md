@@ -7,7 +7,7 @@ A short paper showing that gradient descent on network weights induces **kernel 
 ## Files
 
 - [`activity_dynamics.tex`](activity_dynamics.tex) — Paper source
-- [`activity_dynamics.pdf`](activity_dynamics.pdf) — Compiled PDF
+- [`activity_dynamics.pdf`](https://github.com/koerding/ADescent/raw/main/activity_dynamics.pdf) — Compiled PDF
 - [`gen_figures.py`](gen_figures.py) — Python script to generate figures
 - [`activity_ntk_demo.jsx`](activity_ntk_demo.jsx) — Interactive demo (React/JSX)
 
