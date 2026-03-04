@@ -615,7 +615,11 @@ function App() {
 
           <div style={{ background: "#fff", border: "1px solid #e0ddd5", borderRadius: 4, padding: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Actual vs predicted {"\u0394A"}</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {scatterMode === "negGradA"
+                  ? "Does GD on weights look like GD on activities?"
+                  : "Can kernels predict the change of neurons?"}
+              </div>
               <div style={{ display: "flex", gap: 0, fontFamily: "monospace", fontSize: 9 }}>
                 {MODES.map((mode, mi) => (
                   <button key={mode} onClick={() => setScatterMode(mode)}
