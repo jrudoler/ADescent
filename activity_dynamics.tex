@@ -29,7 +29,12 @@
 \vspace{-2pt}
 
 \small
-Consider a feedforward network with weights $\vW$ and neural activities $A_i(\vW)$, trained to minimise a loss $L$.  Gradient descent updates every weight simultaneously:
+
+\paragraph{The problem: synaptic learning rules are hidden, but activity changes are not.}
+A central question in neuroscience is whether biological neural networks optimise a loss function by adjusting synaptic weights---and if so, by what rule.  Decades of theoretical work have proposed candidate learning rules.  But synaptic weights cannot be measured at scale in behaving animals, so these proposals remain difficult to test directly.  Neural \emph{activities}, by contrast, can be recorded in large populations across learning.  This raises a concrete question: if the brain does perform gradient descent on its weights, what should we expect to see in the activities?  Here we show that the answer takes a surprisingly simple form---activity changes must be approximately proportional to activity-space loss gradients---and that this prediction is directly testable with existing experimental techniques.
+
+\paragraph{Setup and derivation.}
+Consider a feedforward network with weights $\vW$ and neural activities $A_i(\vW)$, trained to minimise a loss $L$.  Gradient descent on the weights embodies a simple principle: \emph{the more that strengthening a synapse would improve performance, the more that synapse is strengthened} (and vice versa---harmful synapses are weakened).  Formally, every weight is updated simultaneously:
 %
 \begin{equation}
   \Delta W_\alpha = -\eta\,\frac{\partial L}{\partial W_\alpha}\,,
@@ -62,15 +67,15 @@ where
 %
 is a neural-tangent-kernel-style Gram matrix defined on internal
 activities rather than network outputs.
-In vector form, $\Delta\vA = -\eta\,\Theta\,\nabla_{\!\vA}L$: gradient descent in weight space induces \emph{kernel descent} in activity space, with $\Theta$ encoding how strongly every pair of neurons shares upstream parameters.
+In vector form, $\Delta\vA = -\eta\,\Theta\,\nabla_{\!\vA}L$: gradient descent in weight space induces \emph{kernel descent} in activity space, with $\Theta$ encoding how strongly every pair of neurons shares upstream parameters.  This identity is exact and holds for any differentiable network, regardless of depth, width, or activation function.
 
-\paragraph{Self term.}
-The diagonal element $\Theta_{ii}=\lVert\grad A_i\rVert^2$ collects contributions from \emph{all} weights that influence neuron $i$---both its own incoming weights and every weight in earlier layers that lies on a path to it.  Because $\Theta_{ii}>0$, the self term is always aligned with $-\partial L/\partial A_i$: each neuron's activity moves down its own loss gradient, with an effective learning rate $\eta\,\Theta_{ii}$ that grows with the depth and width of its input pathways.
+\paragraph{The self term drives each neuron toward its own loss gradient.}
+The diagonal element $\Theta_{ii}=\lVert\grad A_i\rVert^2$ collects contributions from \emph{all} weights that influence neuron $i$---both its own incoming weights and every weight in earlier layers that lies on a path to it.  Because $\Theta_{ii}>0$, the self term is always aligned with $-\partial L/\partial A_i$: each neuron's activity moves down its own loss gradient, with an effective learning rate $\eta\,\Theta_{ii}$ that grows with the depth and width of its input pathways.  In other words, weight-space gradient descent guarantees that every neuron has a built-in tendency to change its activity in the loss-reducing direction.
 
-\paragraph{Cross terms.}
-The off-diagonal elements $\Theta_{ik}=\grad A_i\cdot\grad A_k$ for $k\neq i$ couple neuron $i$ to every other neuron's loss gradient.  Their magnitude reflects parameter sharing: two neurons fed by overlapping early-layer weights will have large $|\Theta_{ik}|$; neurons in disjoint pathways will have $\Theta_{ik}\approx 0$.  These cross terms have no reason to be aligned with $\partial L/\partial A_i$ and constitute interference---the side-effect of the rest of the network learning simultaneously.
+\paragraph{Cross terms introduce interference from other neurons.}
+The off-diagonal elements $\Theta_{ik}=\grad A_i\cdot\grad A_k$ for $k\neq i$ couple neuron $i$ to every other neuron's loss gradient.  Their magnitude reflects parameter sharing: two neurons fed by overlapping early-layer weights will have large $|\Theta_{ik}|$; neurons in disjoint pathways will have $\Theta_{ik}\approx 0$.  These cross terms have no reason to be aligned with $-\partial L/\partial A_i$ and constitute interference---the side-effect of the rest of the network learning simultaneously.  Whether the self term or the cross terms dominate determines whether activity changes look like activity-space gradient descent or something messier.
 
-\paragraph{When is $\Theta$ approximately diagonal?}
+\paragraph{Wide networks make the kernel diagonal-dominant.}
 The cross terms vanish when $\grad A_i \cdot \grad A_k \approx 0$ for $i\neq k$---that is, when different neurons' activities depend on nearly orthogonal directions in weight space.  Several settings push the kernel toward this regime.
 
 \emph{Width.}  At random initialization, two neurons in the same layer share no incoming weights, so their activity gradients are independent random vectors in parameter space.  By concentration of measure, their inner product scales as $O(1/\sqrt{d})$ while the diagonal scales as $O(1)$, making $\Theta$ increasingly diagonal-dominant as width grows---the internal-activity analogue of the NTK becoming deterministic at infinite width.
@@ -79,30 +84,37 @@ The cross terms vanish when $\grad A_i \cdot \grad A_k \approx 0$ for $i\neq k$-
 
 \emph{Learning dynamics.}  Gradient descent itself may reinforce diagonal dominance.  Training is known to decorrelate neural representations as the network learns to tile the input space efficiently.  To the extent that decorrelated activities imply decorrelated parameter gradients---since $\partial A_i/\partial W_\alpha$ depends on upstream activations feeding into $i$---learning should progressively shrink the off-diagonal entries of $\Theta$.  The link between activity and gradient decorrelation is heuristic and deserves formal treatment, but it suggests that trained networks may be closer to the diagonal regime than their initializations.
 
-\paragraph{Upshot.}
-The activity change $\Delta A_i$ is a weighted combination of the loss gradients of \emph{all} neurons, with weights given by the kernel $\Theta$.
-When the kernel is diagonally dominant ($\Theta_{ii}\gg\sum_{k\neq i}|\Theta_{ik}|$), activity dynamics closely track the negative loss gradient, $\Delta A_i\approx -\eta\,\Theta_{ii}\,\partial L/\partial A_i$.  In this regime, each neuron's activity change is simply proportional to what backpropagation says it should be---an approximation that improves with width and, arguably, over the course of training.
+Taken together, these arguments imply that in sufficiently wide networks---and cortical circuits are very wide---the kernel $\Theta$ is approximately diagonal, and activity changes closely track the negative activity-space loss gradient.
 
-\paragraph{Caveat: the reverse direction.}
-The converse is weaker: observing that activities follow their loss gradient constrains the projection of $\Delta\vW$ onto the row space of the Jacobian $\partial A_i/\partial W_\alpha$, but says nothing about the (typically vast) null space of weight changes that leave activities unchanged on the current input.  Activity-level gradient descent is therefore consistent with many different weight-level learning rules, of which backpropagation is the minimum-norm solution.
+\paragraph{The diagonal approximation: activity descent as a proxy for weight descent.}
+Combining the kernel identity (Eq.\,3) with diagonal dominance ($\Theta_{ii}\gg\sum_{k\neq i}|\Theta_{ik}|$) yields a simple approximation:
+%
+\begin{equation}\label{eq:diag}
+  \Delta A_i \;\approx\; -\eta\,\Theta_{ii}\;\frac{\partial L}{\partial A_i}\,.
+\end{equation}
+%
+The intuitive meaning mirrors that of weight descent: just as weight descent says \emph{strengthen each synapse in proportion to how much it helps}, activity descent says \emph{increase each neuron's firing in proportion to how much that increase would help} (and decrease it when it hurts).  Equation~5 shows that one implies the other in wide networks---the per-neuron scaling $\Theta_{ii}$ may differ across neurons, but every neuron's activity moves in the direction that locally reduces the loss.  This is the paper's central result: \emph{if a network performs gradient descent on its weights, and the network is wide enough, then its activity changes must approximately follow gradient descent in activity space.}  The approximation improves with width and, as our simulations show (Figs.\,1--2), is already accurate at moderate widths.
 
-\paragraph{Experimental prediction.}
-If a biological neural network performs any form of gradient descent on its synaptic weights---even an approximate or noisy variant---and is sufficiently wide that $\Theta$ is diagonal-dominant, then the observable activity changes must satisfy $\Delta A_i \approx -\eta\,\Theta_{ii}\,\partial L/\partial A_i$.  The per-neuron scaling $\Theta_{ii}$ is unknown and may vary across neurons, but the \emph{direction} of $\Delta\vA$ is pinned: it must be approximately proportional to $-\nabla_{\!\vA}L$.  This is directly testable.  One can record neural activities across learning trials, estimate $\partial L/\partial A_i$ from a task-fitted model, and check whether the measured $\Delta A_i$ is proportional to the predicted gradient---only the direction matters, not the magnitude.  The key value of this result is that it converts an untestable claim about synaptic learning rules (which cannot be measured at scale in vivo) into a testable prediction about activity changes (which can be).  A failure of proportionality would rule out not just backpropagation but \emph{any} weight-space gradient rule in a network wide enough for diagonal dominance.
+\paragraph{A testable prediction for neuroscience.}
+This result converts an untestable claim about synaptic learning rules into a testable prediction about observable activity changes.  Synaptic weights cannot be measured at scale in vivo, but neural activities can.  If a biological circuit performs \emph{any} form of gradient descent on its synaptic weights---even an approximate or noisy variant---and is sufficiently wide that $\Theta$ is diagonal-dominant, then the observable activity changes must satisfy Eq.\,5.  The per-neuron scaling $\Theta_{ii}$ is unknown and may vary across neurons, but the \emph{direction} of $\Delta\vA$ is pinned: it must be approximately proportional to $-\nabla_{\!\vA}L$.  A concrete experimental protocol follows: record neural population activity across learning trials, estimate $\partial L/\partial A_i$ from a task-fitted model, and check whether the measured $\Delta A_i$ is proportional to the predicted gradient.  Only the direction matters, not the magnitude---the unknown $\Theta_{ii}$ absorbs all per-neuron scaling.  A failure of proportionality would rule out not just backpropagation but \emph{any} weight-space gradient rule in a network wide enough for diagonal dominance.
+
+\paragraph{Caveat: activity descent is necessary but not sufficient for weight descent.}
+The converse is weaker: observing that activities follow their loss gradient constrains the projection of $\Delta\vW$ onto the row space of the Jacobian $\partial A_i/\partial W_\alpha$, but says nothing about the (typically vast) null space of weight changes that leave activities unchanged on the current input.  Activity-level gradient descent is therefore consistent with many different weight-level learning rules, of which backpropagation is the minimum-norm solution.  In short, weight descent implies activity descent (in wide networks), but activity descent does not uniquely identify the weight-level rule.  This asymmetry is a feature, not a bug: it means the test can \emph{falsify} gradient-based learning, even though it cannot confirm a specific synaptic rule.
 
 \paragraph{Methods.}
-Figures~1--2 numerically verify Eqs.\,2--5 in a 3-hidden-layer ReLU MLP trained with online SGD ($\eta=0.005$) on a 2-class spiral dataset (20 points per class, input dimension 2, output dimension 2).  At regular intervals during training, we compute the full activity Jacobian $\partial A_i/\partial W_\alpha$ and the kernel $\Theta_{ik}$, then compare the predicted activity change $\Delta A$ from the chain-rule identity (Eq.\,2), the kernel equation (Eq.\,3), and the diagonal approximation (Eq.\,5) against the actual change measured after a single gradient step.  Figure~1 shows detailed diagnostics at widths 8 and 48; Figure~2 sweeps width from 4 to 128 (3 seeds each) to quantify how the diagonal approximation improves with width.
+Figures~1--2 numerically verify Eqs.\,2--5 in a 3-hidden-layer ReLU MLP trained with online SGD ($\eta=0.005$) on a 2-class spiral dataset (20 points per class, input dimension 2, output dimension 2).  At regular intervals during training, we compute the full activity Jacobian $\partial A_i/\partial W_\alpha$ and the kernel $\Theta_{ik}$, then compare the predicted activity change $\Delta A$ from the chain-rule identity (Eq.\,2), the kernel equation (Eq.\,3), and the diagonal approximation (Eq.\,5) against the actual change measured after a single gradient step.  Figure~1 shows detailed diagnostics at widths 8 and 48.  Figure~2 sweeps width from 4 to 128 (3 random seeds per width, each trained for 2000 SGD steps) to quantify how the diagonal approximation improves with width.
 
 \newpage
 \begin{figure}[h!]
 \centering
 \includegraphics[width=\textwidth]{fig_ntk.pdf}
-\caption{Numerical verification of activity-space kernel descent on a 2-class spiral task (ReLU MLP, 3 hidden layers, online SGD). Top row: width\,=\,8. Middle row: width\,=\,48. Left: normalised $\Theta_{ik}$ heatmaps. Centre-left to centre-right: predicted vs.\ actual $\Delta A$ for the chain-rule identity (Eq.\,2), the full kernel equation (Eq.\,3), and the diagonal approximation (Eq.\,5). Bottom row: $R^2$ and loss over training.}
+\caption{\textbf{In a wide network doing weight descent, activity changes closely match activity-space gradient descent.}  Top row: width\,=\,8.  Middle row: width\,=\,48.  Left: normalised $\Theta_{ik}$ heatmaps (white = uncorrelated, blue = correlated).  Centre panels: predicted vs.\ actual $\Delta A$ for the chain-rule identity (Eq.\,2), the full kernel (Eq.\,3), and the diagonal approximation (Eq.\,5).  Bottom row: $R^2$ and loss over training.  At width\,=\,8 the diagonal approximation fails ($R^2<0$); at width\,=\,48 it is near-perfect.}
 \end{figure}
 
 \begin{figure}[h!]
 \centering
 \includegraphics[width=0.55\textwidth]{fig_width_sweep.pdf}
-\caption{Quality of the diagonal approximation (Eq.\,5) as a function of hidden-layer width.  Each network has 3 hidden layers trained for 2000 SGD steps; shaded regions show $\pm1$ s.d.\ across 3 random seeds.  The diagonal approximation is poor at small width ($R^2<0$ at width\,=\,4) but approaches $R^2\approx 1$ as width grows, consistent with the off-diagonal entries of $\Theta$ becoming negligible in the wide limit.}
+\caption{\textbf{The wider the network, the more faithfully activity changes track the activity-space loss gradient.}  $R^2$ of the diagonal approximation (Eq.\,5) as a function of hidden-layer width.  At width\,=\,4 the approximation fails; by width\,$\sim$\,32 it is reliable ($R^2>0.9$).  Shaded regions: $\pm1$ s.d.\ across seeds.}
 \end{figure}
 
 \end{document}

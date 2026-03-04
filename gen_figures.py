@@ -239,17 +239,21 @@ def plot_scatter(ax, pred, actual, neuron_counts, label, eq_label):
     ax.tick_params(labelsize=5)
     ax.set_title(f'{eq_label}\n$R^2 = {r2v:.3f}$', fontsize=7, fontweight='bold', pad=3)
 
-def plot_dynamics(ax, history):
+def plot_dynamics(ax, history, show_loss_label=True):
     steps = history['step']
     ax.plot(steps, history['r2_ground'], '-', color='#aaa', linewidth=0.8, label=r'$R^2$ ($J\cdot\Delta W$)', alpha=0.7)
     ax.plot(steps, history['r2_full'], '-', color='#2563eb', linewidth=1.2, label=r'$R^2$ ($\Theta\cdot\partial L$)')
     ax.plot(steps, history['r2_diag'], '-', color='#059669', linewidth=1.2, label=r'$R^2$ (diag $\Theta$)')
-    
+
     ax2 = ax.twinx()
     ax2.plot(steps, history['loss'], '--', color='#d44a', linewidth=0.8, label='loss')
-    ax2.set_ylabel('loss', fontsize=7, color='#d44a')
-    ax2.tick_params(labelsize=6, colors='#d44a')
-    
+    if show_loss_label:
+        ax2.set_ylabel('loss', fontsize=7, color='#d44a')
+        ax2.tick_params(labelsize=5, colors='#d44a')
+    else:
+        ax2.set_yticklabels([])
+        ax2.tick_params(right=False)
+
     ax.axhline(1, color='#e8e5dd', linestyle='--', linewidth=0.5)
     ax.axhline(0, color='#e8e5dd', linewidth=0.5)
     ax.set_ylim(-0.5, 1.1)
@@ -270,16 +274,13 @@ h48, snap48, sizes48 = run_experiment(width=48, depth=3, eta=0.005, n_steps=3000
 fig = plt.figure(figsize=(7.0, 6.2), dpi=200)
 fig.patch.set_facecolor('#faf9f6')
 
-gs = GridSpec(3, 4, figure=fig, hspace=0.65, wspace=0.50,
+gs = GridSpec(3, 4, figure=fig, hspace=0.65, wspace=0.60,
               left=0.08, right=0.96, top=0.95, bottom=0.07)
 
 
 # Row 1: width=8
-fig.text(0.03, 0.60, 'width\n= 8', ha='center', va='center', fontsize=8,
-         fontweight='bold', color='#dc2626', rotation=0)
-
 ax1 = fig.add_subplot(gs[0, 0])
-plot_theta_heatmap(ax1, snap8['Theta'], snap8['nc'])
+plot_theta_heatmap(ax1, snap8['Theta'], snap8['nc'], ' (width=8)')
 
 ax2 = fig.add_subplot(gs[0, 1])
 plot_scatter(ax2, snap8['gt'], snap8['deltaA'], snap8['nc'],
@@ -295,11 +296,8 @@ plot_scatter(ax4, snap8['dp'], snap8['deltaA'], snap8['nc'],
 ax4.legend(fontsize=4.5, loc='lower right', framealpha=0.8, markerscale=0.8)
 
 # Row 2: width=48
-fig.text(0.03, 0.35, 'width\n= 48', ha='center', va='center', fontsize=8,
-         fontweight='bold', color='#059669', rotation=0)
-
 ax5 = fig.add_subplot(gs[1, 0])
-plot_theta_heatmap(ax5, snap48['Theta'], snap48['nc'])
+plot_theta_heatmap(ax5, snap48['Theta'], snap48['nc'], ' (width=48)')
 
 ax6 = fig.add_subplot(gs[1, 1])
 plot_scatter(ax6, snap48['gt'], snap48['deltaA'], snap48['nc'],
@@ -315,11 +313,11 @@ plot_scatter(ax8, snap48['dp'], snap48['deltaA'], snap48['nc'],
 
 # Row 3: Training dynamics side by side
 ax9 = fig.add_subplot(gs[2, :2])
-plot_dynamics(ax9, h8)
+plot_dynamics(ax9, h8, show_loss_label=False)
 ax9.set_title('Training dynamics (width=8)', fontsize=8, fontweight='bold')
 
 ax10 = fig.add_subplot(gs[2, 2:])
-plot_dynamics(ax10, h48)
+plot_dynamics(ax10, h48, show_loss_label=True)
 ax10.set_title('Training dynamics (width=48)', fontsize=8, fontweight='bold')
 
 plt.savefig('/Users/konrad_1/AvsWdescent/fig_ntk.pdf', bbox_inches='tight', facecolor='#faf9f6')
