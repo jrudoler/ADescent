@@ -267,14 +267,25 @@ function computeAllPredictions(net, fwd, dLdW, dLdA, target, eta) {
 
 // ======================== DATA ========================
 
-function makeSpirals(nPerClass) {
+function makeBarImages(nPerClass) {
+  // 4x4 images: horizontal bars vs vertical bars + Gaussian noise
   const X = [], Y = [];
+  const noise = 0.15;
   for (let i = 0; i < nPerClass; i++) {
-    const t = (i / nPerClass) * 3 * Math.PI + Math.PI / 2;
-    const r = (i / nPerClass) * 0.8 + 0.2;
-    X.push([r * Math.cos(t) + randn() * 0.06, r * Math.sin(t) + randn() * 0.06]);
+    // Horizontal bar: pick a random row to be bright
+    const hImg = new Array(16).fill(0);
+    const row = Math.floor(Math.random() * 4);
+    for (let c = 0; c < 4; c++) hImg[row * 4 + c] = 1;
+    for (let j = 0; j < 16; j++) hImg[j] += randn() * noise;
+    X.push(hImg);
     Y.push([1, 0]);
-    X.push([-r * Math.cos(t) + randn() * 0.06, -r * Math.sin(t) + randn() * 0.06]);
+
+    // Vertical bar: pick a random column to be bright
+    const vImg = new Array(16).fill(0);
+    const col = Math.floor(Math.random() * 4);
+    for (let r = 0; r < 4; r++) vImg[r * 4 + col] = 1;
+    for (let j = 0; j < 16; j++) vImg[j] += randn() * noise;
+    X.push(vImg);
     Y.push([0, 1]);
   }
   return { X, Y };
@@ -404,11 +415,11 @@ function App() {
   const lastData = useRef(null);
 
   const initNetwork = useCallback(() => {
-    const sizes = [2];
+    const sizes = [16];
     for (let i = 0; i < depth; i++) sizes.push(width);
     sizes.push(2);
     netRef.current = createNetwork(sizes);
-    dataRef.current = makeSpirals(20);
+    dataRef.current = makeBarImages(20);
     stepRef.current = 0;
     setStep(0); setMetrics({}); setHistory([]);
     lastData.current = null;
@@ -559,7 +570,7 @@ function App() {
   }, [running, doStep, cheapStep, diagEvery]);
 
   const fmt = (v, d = 3) => v != null ? v.toFixed(d) : "\u2014";
-  const sizes = [2, ...Array(depth).fill(width), 2];
+  const sizes = [16, ...Array(depth).fill(width), 2];
   const totalN = sizes.slice(1).reduce((s, n) => s + n, 0);
   const m = metrics;
 
@@ -629,7 +640,7 @@ function App() {
             </button>
           ))}
           <span style={{ color: "#999", fontSize: 10 }}>
-            ReLU MLP [{sizes.join(",")}] &middot; {totalN} neurons &middot; 2-class spiral (40 pts, 1 sampled/step) &middot; step {step}
+            ReLU MLP [{sizes.join(",")}] &middot; {totalN} neurons &middot; 4&times;4 bars: horiz vs vert (40 imgs, 1 sampled/step) &middot; step {step}
           </span>
         </div>
 
