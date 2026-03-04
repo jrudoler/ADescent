@@ -52,14 +52,23 @@ def backprop(sizes, W, a, h, target):
             dLdA[l] = W[l][:, :-1].T @ delta  # exclude bias column
     return dLdA, dLdW
 
-def make_spirals(n_per_class=20):
+def make_bar_images(n_per_class=20, noise=0.15):
     X, Y = [], []
-    for i in range(n_per_class):
-        t = (i / n_per_class) * 3 * np.pi + np.pi / 2
-        r = (i / n_per_class) * 0.8 + 0.2
-        X.append([r*np.cos(t) + np.random.randn()*0.06, r*np.sin(t) + np.random.randn()*0.06])
+    for _ in range(n_per_class):
+        # Horizontal bar: random row bright
+        h_img = np.zeros(16)
+        row = np.random.randint(4)
+        h_img[row*4:(row+1)*4] = 1.0
+        h_img += np.random.randn(16) * noise
+        X.append(h_img)
         Y.append([1, 0])
-        X.append([-r*np.cos(t) + np.random.randn()*0.06, -r*np.sin(t) + np.random.randn()*0.06])
+        # Vertical bar: random column bright
+        v_img = np.zeros(16)
+        col = np.random.randint(4)
+        for r in range(4):
+            v_img[r*4 + col] = 1.0
+        v_img += np.random.randn(16) * noise
+        X.append(v_img)
         Y.append([0, 1])
     return np.array(X), np.array(Y)
 
@@ -162,9 +171,9 @@ def corr(actual, pred):
 # ======================== RUN EXPERIMENT ========================
 
 def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
-    sizes = [2] + [width]*depth + [2]
+    sizes = [16] + [width]*depth + [2]
     sizes_tuple, W = create_network(sizes)
-    X, Y = make_spirals(20)
+    X, Y = make_bar_images(20)
     B = len(X)
     
     history = {'step': [], 'loss': [], 'corr_ground': [], 'corr_full': [], 'corr_diag': []}
