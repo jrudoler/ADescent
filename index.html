@@ -405,6 +405,8 @@ function App() {
   const [history, setHistory] = useState([]);
   const [running, setRunning] = useState(false);
   const [scatterMode, setScatterMode] = useState("negGradA");
+  const [stimulus, setStimulus] = useState(null);
+  const [stimLabel, setStimLabel] = useState("");
 
   const netRef = useRef(null);
   const dataRef = useRef(null);
@@ -507,6 +509,7 @@ function App() {
     return {
       preds: { fullTheta: filtTheta, diagBP: filtDiag, negGradA: filtNeg },
       actual: deltaA, neuronCounts: filtCounts, Theta, totalN, totalLoss, r2G, r2F, r2D, keep,
+      stimulus: X[bi], stimLabel: Y[bi][0] > 0.5 ? "horiz" : "vert",
     };
   }, [lr]);
 
@@ -516,7 +519,8 @@ function App() {
     if (doExpensive) {
       const result = expensiveStep();
       if (!result) return;
-      const { preds, actual, neuronCounts, Theta, totalN, totalLoss, r2G, r2F, r2D, keep } = result;
+      const { preds, actual, neuronCounts, Theta, totalN, totalLoss, r2G, r2F, r2D, keep, stimulus: stim, stimLabel: sLabel } = result;
+      setStimulus(stim); setStimLabel(sLabel);
       if (Theta && keep) {
         // Filter Theta to active neurons only
         const activeIdx = []; for (let i = 0; i < keep.length; i++) if (keep[i]) activeIdx.push(i);
@@ -644,7 +648,24 @@ function App() {
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: 18, marginBottom: 12, fontFamily: "monospace", fontSize: 11, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 18, marginBottom: 12, fontFamily: "monospace", fontSize: 11, flexWrap: "wrap", alignItems: "center" }}>
+          {stimulus && <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <canvas ref={el => {
+              if (!el || !stimulus) return;
+              const ctx = el.getContext("2d");
+              const vals = stimulus;
+              let mn = Infinity, mx = -Infinity;
+              for (const v of vals) { if (v < mn) mn = v; if (v > mx) mx = v; }
+              const range = mx - mn || 1;
+              for (let r = 0; r < 4; r++)
+                for (let c = 0; c < 4; c++) {
+                  const v = Math.round(255 * (vals[r * 4 + c] - mn) / range);
+                  ctx.fillStyle = `rgb(${v},${v},${v})`;
+                  ctx.fillRect(c * 8, r * 8, 8, 8);
+                }
+            }} width={32} height={32} style={{ width: 24, height: 24, imageRendering: "pixelated", border: "1px solid #ccc" }} />
+            <span style={{ fontSize: 9, color: "#888" }}>{stimLabel}</span>
+          </span>}
           <span>loss: <b>{fmt(m.loss, 4)}</b></span>
           <span style={{ color: "#888" }}>r<sub style={{fontSize:9}}>exact</sub>: <b>{fmt(m.r2G)}</b></span>
           <span style={{ color: "#2563eb" }}>r<sub style={{fontSize:9}}>kernel</sub>: <b>{fmt(m.r2F)}</b></span>
