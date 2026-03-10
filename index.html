@@ -502,13 +502,13 @@ function App() {
       for (let i = 0; i < neuronCounts[l]; i++) { if (keep[idx]) c++; idx++; }
       filtCounts.push(c);
     }
-    const r2G = corrfn(deltaA, filtGround);
+    const r2Raw = corrfn(deltaA, filtNeg);
     const r2F = corrfn(deltaA, filtTheta);
     const r2D = corrfn(deltaA, filtDiag);
     stepRef.current++;
     return {
       preds: { fullTheta: filtTheta, diagBP: filtDiag, negGradA: filtNeg },
-      actual: deltaA, neuronCounts: filtCounts, Theta, totalN, totalLoss, r2G, r2F, r2D, keep,
+      actual: deltaA, neuronCounts: filtCounts, Theta, totalN, totalLoss, r2Raw, r2F, r2D, keep,
       stimulus: X[bi], stimLabel: Y[bi][0] > 0.5 ? "horiz" : "vert",
     };
   }, [lr]);
@@ -519,7 +519,7 @@ function App() {
     if (doExpensive) {
       const result = expensiveStep();
       if (!result) return;
-      const { preds, actual, neuronCounts, Theta, totalN, totalLoss, r2G, r2F, r2D, keep, stimulus: stim, stimLabel: sLabel } = result;
+      const { preds, actual, neuronCounts, Theta, totalN, totalLoss, r2Raw, r2F, r2D, keep, stimulus: stim, stimLabel: sLabel } = result;
       setStimulus(stim); setStimLabel(sLabel);
       if (Theta && keep) {
         // Filter Theta to active neurons only
@@ -534,10 +534,10 @@ function App() {
       lastData.current = { preds, actual, neuronCounts };
       drawScatter(scatRef.current, preds[scatterMode], actual, neuronCounts, MODE_LABELS[scatterMode], scatterMode === "negGradA");
       setStep(stepRef.current);
-      setMetrics({ loss: totalLoss, r2G, r2F, r2D });
+      setMetrics({ loss: totalLoss, r2Raw, r2F, r2D });
       setHistory(h => [...h, {
         step: stepRef.current, loss: +totalLoss.toFixed(5),
-        "r exact": +r2G.toFixed(4), "r kernel": +r2F.toFixed(4), "r scaled": +r2D.toFixed(4),
+        "r raw": +r2Raw.toFixed(4), "r kernel": +r2F.toFixed(4), "r scaled": +r2D.toFixed(4),
       }]);
     } else {
       const totalLoss = cheapStep();
@@ -667,7 +667,7 @@ function App() {
             <span style={{ fontSize: 9, color: "#888" }}>{stimLabel}</span>
           </span>}
           <span>loss: <b>{fmt(m.loss, 4)}</b></span>
-          <span style={{ color: "#888" }}>r<sub style={{fontSize:9}}>exact</sub>: <b>{fmt(m.r2G)}</b></span>
+          <span style={{ color: "#888" }}>r<sub style={{fontSize:9}}>raw</sub>: <b>{fmt(m.r2Raw)}</b></span>
           <span style={{ color: "#2563eb" }}>r<sub style={{fontSize:9}}>kernel</sub>: <b>{fmt(m.r2F)}</b></span>
           <span style={{ color: "#059669" }}>r<sub style={{fontSize:9}}>scaled</sub>: <b>{fmt(m.r2D)}</b></span>
         </div>
@@ -745,7 +745,7 @@ function App() {
                 <Tooltip contentStyle={{ fontSize: 10, fontFamily: "monospace" }} />
                 <ReferenceLine yAxisId="left" y={1} stroke="#e8e5dd" strokeDasharray="4 4" />
                 <ReferenceLine yAxisId="left" y={0} stroke="#e8e5dd" />
-                <Line yAxisId="left" type="monotone" dataKey="r exact" stroke="#aaa" strokeWidth={1} dot={false} isAnimationActive={false} strokeDasharray="3 2" />
+                <Line yAxisId="left" type="monotone" dataKey="r raw" stroke="#aaa" strokeWidth={1} dot={false} isAnimationActive={false} strokeDasharray="3 2" />
                 <Line yAxisId="left" type="monotone" dataKey="r kernel" stroke="#2563eb" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 <Line yAxisId="left" type="monotone" dataKey="r scaled" stroke="#059669" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 <Line yAxisId="right" type="monotone" dataKey="loss" stroke="#d4a" strokeWidth={1} dot={false} isAnimationActive={false} strokeDasharray="4 3" />
