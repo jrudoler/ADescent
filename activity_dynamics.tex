@@ -101,64 +101,29 @@ This result converts an untestable claim about synaptic learning rules into a te
 \paragraph{Caveat: activity descent is necessary but not sufficient for weight descent.}
 The converse is weaker: observing that activities follow their loss gradient constrains the projection of $\Delta\vW$ onto the row space of the Jacobian $\partial A_i/\partial W_\alpha$, but says nothing about the (typically vast) null space of weight changes that leave activities unchanged on the current input.  Activity-level gradient descent is therefore consistent with many different weight-level learning rules, of which backpropagation is the minimum-norm solution.  In short, weight descent implies activity descent (in wide networks), but activity descent does not uniquely identify the weight-level rule.  This asymmetry is a feature, not a bug: it means the test can \emph{falsify} gradient-based learning, even though it cannot confirm a specific synaptic rule.
 
-\section*{Layer-local formulation of the kernel}
+\section*{Layer-local kernel descent}
 
-The global kernel $\Theta$ couples every neuron to every other neuron in the network.  But the feedforward structure of the network permits a more local description, in which activity dynamics are computed layer by layer.  The key observation is that for a neuron in layer~$\ell$, the loss gradient $\partial L/\partial A_i^{(\ell)}$ is a \emph{sufficient statistic} for all downstream activity: it compresses everything that layers $\ell{+}1,\ldots,L$ contribute to the weight updates that affect neuron~$i$.
-
-\paragraph{Separating own-layer and propagated contributions.}
-The activity of neuron~$i$ in layer~$\ell$ depends on two things: the weights $W^{(\ell)}$ feeding into it, and the activities $A^{(\ell-1)}$ of the previous layer.  Linearising in the weight update gives
+The global kernel $\Theta$ couples every neuron to every other neuron across all layers.  But the feedforward structure permits a per-layer formulation that is both exact and more local.  For neurons $i,k$ in the same layer~$\ell$, define
 %
-\begin{equation}\label{eq:layer-decomp}
-  \Delta A_i^{(\ell)}
-  \;=\;
-  \underbrace{\sum_j \frac{\partial A_i^{(\ell)}}{\partial W^{(\ell)}_{ij}}\,\Delta W^{(\ell)}_{ij}}_{\text{own-layer weights}}
-  \;+\;
-  \underbrace{\sum_j \frac{\partial A_i^{(\ell)}}{\partial A_j^{(\ell-1)}}\,\Delta A_j^{(\ell-1)}}_{\text{propagated from layer below}}\,.
-\end{equation}
-
-\paragraph{The own-layer term is diagonal.}
-Because $W^{(\ell)}_{ij}$ feeds exclusively into neuron~$i$, no other neuron in layer~$\ell$ appears.  Substituting $\Delta W^{(\ell)}_{ij} = -\eta\,\sigma'(z_i^{(\ell)})\,\frac{\partial L}{\partial A_i^{(\ell)}}\,A_j^{(\ell-1)}$ and $\frac{\partial A_i^{(\ell)}}{\partial W^{(\ell)}_{ij}} = \sigma'(z_i^{(\ell)})\,A_j^{(\ell-1)}$, the own-layer contribution evaluates to
-%
-\begin{equation}\label{eq:own-layer}
-  \Delta A_i^{(\ell)}\big|_{W^{(\ell)}}
-  \;=\;
-  -\eta\,\bigl[\sigma'(z_i^{(\ell)})\bigr]^2\,\lVert\vA^{(\ell-1)}\rVert^2\;\frac{\partial L}{\partial A_i^{(\ell)}}\,.
+\begin{equation}\label{eq:phi-def}
+  \Phi^{(\ell)}_{ik}
+  \;\coloneqq\; \sum_\alpha \frac{\partial A_i^{(\ell)}}{\partial W_\alpha}\,\frac{\partial A_k^{(\ell)}}{\partial W_\alpha}
+  \;=\; \grad A_i^{(\ell)} \cdot \grad A_k^{(\ell)}
 \end{equation}
 %
-This is purely \emph{diagonal}: each neuron's own-layer contribution depends only on its own loss gradient, with a positive scalar that depends on local quantities (the activation derivative and pre-synaptic activity norm).  No same-layer kernel is needed.
-
-\paragraph{The propagated term couples adjacent layers.}
-Writing $J_\ell = \partial\vA^{(\ell)}/\partial\vA^{(\ell-1)}$ for the inter-layer Jacobian, the second term in Eq.\,\ref{eq:layer-decomp} is $J_\ell\,\Delta\vA^{(\ell-1)}$, which couples neuron~$i$ in layer~$\ell$ to the activity changes of its pre-synaptic neurons through the forward weights:
+---the same Gram-matrix construction as the global $\Theta$ (Eq.\,4), restricted to neurons within layer~$\ell$.  Then
 %
-\begin{equation}\label{eq:propagated}
-  \Delta A_i^{(\ell)}\big|_{\text{earlier}}
-  \;=\;
-  \sigma'(z_i^{(\ell)})\sum_j W^{(\ell)}_{ij}\,\Delta A_j^{(\ell-1)}\,.
+\begin{equation}\label{eq:layer-kernel}
+  \boxed{\;\Delta\vA^{(\ell)} \;=\; -\eta\,\Phi^{(\ell)}\,\nabla_{\!\vA^{(\ell)}}L\;,}
 \end{equation}
 %
-This term carries the effect of earlier-layer weight updates forward through the network.  It is the \emph{sole} source of off-diagonal coupling in the per-layer dynamics.
+where $\nabla_{\!\vA^{(\ell)}}L$ is the full backpropagated loss gradient at layer~$\ell$ (the total derivative, not the partial output error used in the global equation).
 
-\paragraph{Layer-recursive activity dynamics.}
-Combining Eqs.\,\ref{eq:own-layer}--\ref{eq:propagated} and writing $D_\ell = \mathrm{diag}\bigl([\sigma'(z_i^{(\ell)})]^2\,\lVert\vA^{(\ell-1)}\rVert^2\bigr)$ gives a compact recursion:
-%
-\begin{equation}\label{eq:recursion}
-  \boxed{\;\Delta\vA^{(\ell)}
-  \;=\;
-  -\eta\,D_\ell\,\nabla_{\!\vA^{(\ell)}}L
-  \;+\;
-  J_\ell\,\Delta\vA^{(\ell-1)}\;,}
-\end{equation}
-%
-with base case $\Delta\vA^{(1)} = -\eta\,D_1\,\nabla_{\!\vA^{(1)}}L$ (the input does not change, so there is no propagated term).  At every layer, the dynamics split into a diagonal ``self'' term driven by the local loss gradient, and a propagated term carrying upstream changes forward.
+\paragraph{Why the per-layer equation is exact.}
+Neuron~$i$ in layer~$\ell$ depends only on weights in layers $1$ through~$\ell$, so $\Delta A_i^{(\ell)} = -\eta\sum_{\alpha\in\text{layers}\,1..\ell} (\partial A_i^{(\ell)}/\partial W_\alpha)\,(\partial L/\partial W_\alpha)$.  In a feedforward network, the effect of any such weight on the loss passes entirely through the activities of layer~$\ell$, so $\partial L/\partial W_\alpha = \sum_{k\in\text{layer}\,\ell} (\partial L/\partial A_k^{(\ell)})\,(\partial A_k^{(\ell)}/\partial W_\alpha)$.  Exchanging the sums yields Eq.\,\ref{eq:layer-kernel} with the kernel $\Phi^{(\ell)}$ defined in Eq.\,\ref{eq:phi-def}.  The backpropagated gradient $\nabla_{\!\vA^{(\ell)}}L$ acts as a \emph{sufficient statistic}: it compresses everything downstream layers contribute to the weight updates that affect layer~$\ell$, so the per-layer equation is not an approximation but an identity.
 
-\paragraph{A per-layer kernel via the sufficient statistic.}
-In a feedforward network, $\nabla_{\!\vA^{(\ell-1)}}L = J_\ell^T\,\nabla_{\!\vA^{(\ell)}}L$: the loss gradient at layer~$\ell{-}1$ is fully determined by the loss gradient at layer~$\ell$ and the inter-layer Jacobian.  Assuming inductively that $\Delta\vA^{(\ell-1)} = -\eta\,\Phi^{(\ell-1)}\nabla_{\!\vA^{(\ell-1)}}L$ and substituting, the recursion closes into
-%
-\begin{equation}\label{eq:per-layer-kernel}
-  \Delta\vA^{(\ell)} = -\eta\,\Phi^{(\ell)}\,\nabla_{\!\vA^{(\ell)}}L\,,
-\end{equation}
-%
-where the per-layer kernel satisfies a Lyapunov-like recursion:
+\paragraph{Recursive structure.}
+The per-layer kernel inherits a recursion from the feedforward computation.  Writing $J_\ell = \partial\vA^{(\ell)}/\partial\vA^{(\ell-1)}$ for the inter-layer Jacobian and $D_\ell = \mathrm{diag}([\sigma'(z_i^{(\ell)})]^2\,\lVert\vA^{(\ell-1)}\rVert^2)$ for the diagonal kernel from layer~$\ell$'s own incoming weights:
 %
 \begin{equation}\label{eq:phi-recursion}
   \Phi^{(\ell)} = D_\ell + J_\ell\,\Phi^{(\ell-1)}\,J_\ell^T\,,
@@ -166,13 +131,7 @@ where the per-layer kernel satisfies a Lyapunov-like recursion:
   \Phi^{(1)} = D_1\,.
 \end{equation}
 %
-One can verify that $\Phi^{(\ell)}$ equals the within-layer block $\Theta^{(\ell,\ell)}$ of the global kernel.  The decomposition is exact, not an approximation.
-
-\paragraph{Structural advantages.}
-The layer-local formulation makes three things transparent that the global $\Theta$ obscures.
-\emph{First}, own-layer weights never introduce same-layer coupling---$D_\ell$ is always diagonal.
-\emph{Second}, all off-diagonal structure in $\Phi^{(\ell)}$ originates from the propagated term $J_\ell\,\Phi^{(\ell-1)}\,J_\ell^T$, i.e.\ from earlier-layer weight updates echoing forward through the network.
-\emph{Third}, the diagonal-dominance argument acquires a recursive flavour: at each layer, a fresh diagonal $D_\ell$ is added, while the propagated kernel $J_\ell\,\Phi^{(\ell-1)}\,J_\ell^T$ is decorrelated by the random projections in $J_\ell$.  Width helps at every stage of the recursion, not just globally.
+$D_\ell$ is always diagonal---own-layer weights never couple same-layer neurons.  All off-diagonal structure comes from $J_\ell\,\Phi^{(\ell-1)}\,J_\ell^T$: earlier-layer weight updates propagated forward.  Width decorrelates $J_\ell$ at every stage, so diagonal dominance strengthens recursively.
 
 \paragraph{Methods.}
 Figures~1--2 numerically verify Eqs.\,2--5 in a 3-hidden-layer ReLU MLP trained with online SGD ($\eta=0.005$) on a 2-class image dataset (4$\times$4 pixel images of horizontal vs.\ vertical bars, 20 per class, input dimension 16, output dimension 2).  Dead ReLU neurons (pre-activation $\leq 0$ on the sampled input) are excluded from all analyses.  At regular intervals during training, we compute the full activity Jacobian $\partial A_i/\partial W_\alpha$ and the kernel $\Theta_{ik}$, then compare the predicted activity change $\Delta A$ from the chain-rule identity (Eq.\,2), the kernel equation (Eq.\,3), and the diagonal approximation (Eq.\,5) against the actual change measured after a single gradient step.  Figure~1 shows detailed diagnostics at widths 8 and 48.  Figure~2 sweeps width from 4 to 128 (3 random seeds per width, each trained for 2000 SGD steps) to quantify how the diagonal approximation improves with width.
