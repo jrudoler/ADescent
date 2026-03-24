@@ -2,405 +2,794 @@
 Generate figures for the activity-space NTK paper.
 Same computation as the interactive demo, frozen into publication-quality plots.
 """
+
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
-import matplotlib.colors as mcolors
 
 np.random.seed(42)
 
 # ======================== NETWORK ========================
 
-def create_network(sizes):
-    W = []
-    for i in range(len(sizes)-1):
+
+def create_network(layer_sizes):
+    weight_matrices = []
+    for layer_index in range(len(layer_sizes) - 1):
         # Extra column for bias (input augmented with 1)
-        scale = np.sqrt(2.0 / sizes[i])
-        w = np.random.randn(sizes[i+1], sizes[i] + 1) * scale
-        w[:, -1] = 0  # init biases to zero
-        W.append(w)
-    return sizes, W
+        scale = np.sqrt(2.0 / layer_sizes[layer_index])
+        layer_weights = (
+            np.random.randn(layer_sizes[layer_index + 1], layer_sizes[layer_index] + 1)
+            * scale
+        )
+        layer_weights[:, -1] = 0  # init biases to zero
+        weight_matrices.append(layer_weights)
+    return weight_matrices
 
-def forward(sizes, W, x):
-    a = [x.copy()]
-    h = [None]
-    for l in range(len(W)):
-        a_aug = np.append(a[-1], 1.0)  # append 1 for bias
-        hl = W[l] @ a_aug
-        h.append(hl.copy())
-        if l < len(W) - 1:
-            a.append(np.maximum(0, hl))
-        else:
-            a.append(hl.copy())
-    return a, h
 
-def backprop(sizes, W, a, h, target):
-    L = len(W)
-    dLdA = [None] * (L + 1)
-    dLdA[L] = a[L] - target
-    dLdW = [None] * L
-    for l in range(L-1, -1, -1):
-        if l == L - 1:
-            delta = dLdA[l+1].copy()
+def forward(weight_matrices, input_vector):
+    activities_by_layer = [input_vector.copy()]
+    pre_activations_by_layer = [None]
+    for layer_index in range(len(weight_matrices)):
+        augmented_activities = np.append(
+            activities_by_layer[-1], 1.0
+        )  # append 1 for bias
+        pre_activations = weight_matrices[layer_index] @ augmented_activities
+        pre_activations_by_layer.append(pre_activations.copy())
+        if layer_index < len(weight_matrices) - 1:
+            activities_by_layer.append(np.maximum(0, pre_activations))
         else:
-            delta = dLdA[l+1] * (h[l+1] > 0).astype(float)
-        a_aug = np.append(a[l], 1.0)
-        dLdW[l] = np.outer(delta, a_aug)
-        if l > 0:
-            dLdA[l] = W[l][:, :-1].T @ delta  # exclude bias column
-    return dLdA, dLdW
+            activities_by_layer.append(pre_activations.copy())
+    return activities_by_layer, pre_activations_by_layer
+
+
+def backprop(
+    weight_matrices,
+    activities_by_layer,
+    pre_activations_by_layer,
+    target_vector,
+):
+    num_layers = len(weight_matrices)
+    loss_gradient_by_activity = [None] * (num_layers + 1)
+    loss_gradient_by_activity[num_layers] = (
+        activities_by_layer[num_layers] - target_vector
+    )
+    loss_gradient_by_weights = [None] * num_layers
+    for layer_index in range(num_layers - 1, -1, -1):
+        if layer_index == num_layers - 1:
+            local_gradient = loss_gradient_by_activity[layer_index + 1].copy()
+        else:
+            local_gradient = loss_gradient_by_activity[layer_index + 1] * (
+                pre_activations_by_layer[layer_index + 1] > 0
+            ).astype(float)
+        augmented_activities = np.append(activities_by_layer[layer_index], 1.0)
+        loss_gradient_by_weights[layer_index] = np.outer(
+            local_gradient, augmented_activities
+        )
+        if layer_index > 0:
+            loss_gradient_by_activity[layer_index] = (
+                weight_matrices[layer_index][:, :-1].T @ local_gradient
+            )  # exclude bias column
+    return loss_gradient_by_activity, loss_gradient_by_weights
+
 
 def make_bar_images(n_per_class=20, noise=0.15):
-    X, Y = [], []
+    input_examples, target_vectors = [], []
     for _ in range(n_per_class):
         # Horizontal bar: random row bright
-        h_img = np.zeros(16)
+        horizontal_image = np.zeros(16)
         row = np.random.randint(4)
-        h_img[row*4:(row+1)*4] = 1.0
-        h_img += np.random.randn(16) * noise
-        X.append(h_img)
-        Y.append([1, 0])
+        horizontal_image[row * 4 : (row + 1) * 4] = 1.0
+        horizontal_image += np.random.randn(16) * noise
+        input_examples.append(horizontal_image)
+        target_vectors.append([1, 0])
         # Vertical bar: random column bright
-        v_img = np.zeros(16)
+        vertical_image = np.zeros(16)
         col = np.random.randint(4)
         for r in range(4):
-            v_img[r*4 + col] = 1.0
-        v_img += np.random.randn(16) * noise
-        X.append(v_img)
-        Y.append([0, 1])
-    return np.array(X), np.array(Y)
+            vertical_image[r * 4 + col] = 1.0
+        vertical_image += np.random.randn(16) * noise
+        input_examples.append(vertical_image)
+        target_vectors.append([0, 1])
+    return np.array(input_examples), np.array(target_vectors)
+
 
 # ======================== JACOBIAN ========================
 
-def compute_layer_local_pred(sizes, W, a, h, dLdA, eta):
-    """Layer-local kernel prediction: ΔA^(ℓ) = -η D_ℓ ∇L + J_ℓ ΔA^(ℓ-1)"""
-    L = len(W)
-    totalN = sum(sizes[1:])
-    result = np.zeros(totalN)
-    prevDeltaA = None
-    off = 0
-    for l in range(L):
-        nin, nout = sizes[l], sizes[l+1]
-        # ||a_aug||^2 (includes bias=1)
-        normSq = np.sum(a[l]**2) + 1.0
-        # sigma'(z_i)
-        if l < L - 1:
-            fp = (h[l+1] > 0).astype(float)
-        else:
-            fp = np.ones(nout)
-        gradA = dLdA[l+1]
-        # Own-layer: -eta * fp^2 * normSq * dL/dA
-        deltaA = -eta * fp * fp * normSq * gradA
-        # Propagated: fp[i] * sum_j W[l][i,j] * prevDeltaA[j] (weight cols only, no bias)
-        if prevDeltaA is not None:
-            deltaA += fp * (W[l][:, :-1] @ prevDeltaA)
-        result[off:off+nout] = deltaA
-        off += nout
-        prevDeltaA = deltaA
-    return result
 
-def compute_jacobian_and_predictions(sizes, W, a, h, dLdW, dLdA, target, eta):
-    L = len(W)
-    neuron_counts = sizes[1:]
-    totalN = sum(neuron_counts)
+def compute_layer_local_prediction(
+    layer_sizes,
+    weight_matrices,
+    activities_by_layer,
+    pre_activations_by_layer,
+    loss_gradient_by_activity,
+    learning_rate,
+):
+    """Layer-local kernel prediction: ΔA^(ℓ) = -η D_ℓ ∇L + J_ℓ ΔA^(ℓ-1)."""
+    num_layers = len(weight_matrices)
+    total_neurons = sum(layer_sizes[1:])
+    predicted_activity_change = np.zeros(total_neurons)
+    previous_layer_prediction = None
+    layer_offset = 0
+
+    for layer_index in range(num_layers):
+        output_width = layer_sizes[layer_index + 1]
+        augmented_activity_norm_sq = np.sum(activities_by_layer[layer_index] ** 2) + 1.0
+
+        if layer_index < num_layers - 1:
+            activation_derivative = (
+                pre_activations_by_layer[layer_index + 1] > 0
+            ).astype(float)
+        else:
+            activation_derivative = np.ones(output_width)
+
+        activity_gradient = loss_gradient_by_activity[layer_index + 1]
+        current_layer_prediction = (
+            -learning_rate
+            * activation_derivative
+            * activation_derivative
+            * augmented_activity_norm_sq
+            * activity_gradient
+        )
+
+        if previous_layer_prediction is not None:
+            current_layer_prediction += activation_derivative * (
+                weight_matrices[layer_index][:, :-1] @ previous_layer_prediction
+            )
+
+        predicted_activity_change[layer_offset : layer_offset + output_width] = (
+            current_layer_prediction
+        )
+        layer_offset += output_width
+        previous_layer_prediction = current_layer_prediction
+
+    return predicted_activity_change
+
+
+def compute_jacobian_and_predictions(
+    layer_sizes,
+    weight_matrices,
+    activities_by_layer,
+    pre_activations_by_layer,
+    loss_gradient_by_weights,
+    loss_gradient_by_activity,
+    learning_rate,
+):
+    """
+    Build the exact activity Jacobian for the sampled example and compare
+    several activity-space predictions for a single SGD step.
+
+    Returns flattened vectors over all non-input neurons:
+      exact_activity_change: first-order activity change J @ ΔW from the actual SGD step
+      kernel_prediction: per-layer kernel prediction from Eq. 3
+      diagonal_prediction: diagonal approximation from Eq. 5, i.e. -η Φ_ii dL/dA_i
+      raw_negative_gradient: raw -dL/dA baseline (with dead hidden ReLUs masked out)
+      layerwise_kernel_matrix: block-diagonal matrix of per-layer kernels Φ^(ℓ)
+    """
+    num_layers = len(weight_matrices)
+    neuron_counts = layer_sizes[1:]
+    total_neurons = sum(neuron_counts)
 
     layer_offsets = []
-    off = 0
-    for l in range(L):
-        layer_offsets.append(off)
-        off += sizes[l+1]
+    layer_offset = 0
+    for layer_index in range(num_layers):
+        layer_offsets.append(layer_offset)
+        layer_offset += layer_sizes[layer_index + 1]
 
-    # Backprop gradient (total derivative)
-    gradA_bp = np.zeros(totalN)
-    for l in range(1, L+1):
-        if dLdA[l] is not None:
-            go = layer_offsets[l-1]
-            gradA_bp[go:go+len(dLdA[l])] = dLdA[l]
+    backprop_activity_gradient = np.zeros(total_neurons)
+    for layer_index in range(1, num_layers + 1):
+        if loss_gradient_by_activity[layer_index] is not None:
+            layer_start = layer_offsets[layer_index - 1]
+            backprop_activity_gradient[
+                layer_start : layer_start + len(loss_gradient_by_activity[layer_index])
+            ] = loss_gradient_by_activity[layer_index]
 
-    # Each layer's weight matrix is nout x (nin+1) due to bias augmentation
-    totalParams = sum((sizes[i]+1)*sizes[i+1] for i in range(L))
+    total_parameters = sum(
+        (layer_sizes[layer_index] + 1) * layer_sizes[layer_index + 1]
+        for layer_index in range(num_layers)
+    )
 
-    deltaW_flat = np.zeros(totalParams)
-    poff = 0
-    for l in range(L):
-        n = dLdW[l].size
-        deltaW_flat[poff:poff+n] = -eta * dLdW[l].ravel()
-        poff += n
+    flat_weight_update = np.zeros(total_parameters)
+    parameter_offset = 0
+    for layer_index in range(num_layers):
+        num_layer_parameters = loss_gradient_by_weights[layer_index].size
+        flat_weight_update[
+            parameter_offset : parameter_offset + num_layer_parameters
+        ] = -learning_rate * loss_gradient_by_weights[layer_index].ravel()
+        parameter_offset += num_layer_parameters
 
-    # Build full Jacobian
-    J = np.zeros((totalN, totalParams))
-    param_offset = 0
-    for m in range(L):
-        nin_m, nout_m = sizes[m], sizes[m+1]
-        P = nout_m * (nin_m + 1)  # +1 for bias
-        a_aug = np.append(a[m], 1.0)
+    full_jacobian = np.zeros((total_neurons, total_parameters))
+    parameter_offset = 0
+    for source_layer_index in range(num_layers):
+        source_input_width = layer_sizes[source_layer_index]
+        source_output_width = layer_sizes[source_layer_index + 1]
+        num_source_parameters = source_output_width * (source_input_width + 1)
+        augmented_activities = np.append(activities_by_layer[source_layer_index], 1.0)
 
-        J_cur = np.zeros((nout_m, P))
-        for j in range(nout_m):
-            fp = 1.0 if m == L-1 else (1.0 if h[m+1][j] > 0 else 0.0)
-            J_cur[j, j*(nin_m+1):(j+1)*(nin_m+1)] = fp * a_aug
+        direct_sensitivity_block = np.zeros(
+            (source_output_width, num_source_parameters)
+        )
+        for neuron_index in range(source_output_width):
+            activation_derivative = (
+                1.0
+                if source_layer_index == num_layers - 1
+                else (
+                    1.0
+                    if pre_activations_by_layer[source_layer_index + 1][neuron_index]
+                    > 0
+                    else 0.0
+                )
+            )
+            parameter_slice_start = neuron_index * (source_input_width + 1)
+            parameter_slice_end = (neuron_index + 1) * (source_input_width + 1)
+            direct_sensitivity_block[
+                neuron_index, parameter_slice_start:parameter_slice_end
+            ] = activation_derivative * augmented_activities
 
-        go = layer_offsets[m]
-        J[go:go+nout_m, param_offset:param_offset+P] = J_cur
+        layer_start = layer_offsets[source_layer_index]
+        full_jacobian[
+            layer_start : layer_start + source_output_width,
+            parameter_offset : parameter_offset + num_source_parameters,
+        ] = direct_sensitivity_block
 
-        J_prev = J_cur
-        for l in range(m+1, L):
-            nin_l, nout_l = sizes[l], sizes[l+1]
-            DW = np.zeros((nout_l, nin_l))
-            for i in range(nout_l):
-                fp = 1.0 if l == L-1 else (1.0 if h[l+1][i] > 0 else 0.0)
-                DW[i] = fp * W[l][i, :-1]  # exclude bias column
-            J_new = DW @ J_prev
-            go2 = layer_offsets[l]
-            J[go2:go2+nout_l, param_offset:param_offset+P] = J_new
-            J_prev = J_new
+        propagated_sensitivity_block = direct_sensitivity_block
+        for downstream_layer_index in range(source_layer_index + 1, num_layers):
+            downstream_input_width = layer_sizes[downstream_layer_index]
+            downstream_output_width = layer_sizes[downstream_layer_index + 1]
+            inter_layer_jacobian = np.zeros(
+                (downstream_output_width, downstream_input_width)
+            )
 
-        param_offset += P
+            for downstream_neuron_index in range(downstream_output_width):
+                activation_derivative = (
+                    1.0
+                    if downstream_layer_index == num_layers - 1
+                    else (
+                        1.0
+                        if pre_activations_by_layer[downstream_layer_index + 1][
+                            downstream_neuron_index
+                        ]
+                        > 0
+                        else 0.0
+                    )
+                )
+                inter_layer_jacobian[downstream_neuron_index] = (
+                    activation_derivative
+                    * weight_matrices[downstream_layer_index][
+                        downstream_neuron_index, :-1
+                    ]
+                )  # exclude bias column
 
-    groundTruth = J @ deltaW_flat
+            propagated_sensitivity_block = (
+                inter_layer_jacobian @ propagated_sensitivity_block
+            )
+            downstream_layer_start = layer_offsets[downstream_layer_index]
+            full_jacobian[
+                downstream_layer_start : downstream_layer_start
+                + downstream_output_width,
+                parameter_offset : parameter_offset + num_source_parameters,
+            ] = propagated_sensitivity_block
 
-    theta_diag = np.sum(J**2, axis=1)
-    diagPred = -eta * theta_diag * gradA_bp
+        parameter_offset += num_source_parameters
 
-    # Layer-local kernel prediction
-    kernelPred = compute_layer_local_pred(sizes, W, a, h, dLdA, eta)
+    exact_activity_change = full_jacobian @ flat_weight_update
 
-    # Active mask: hidden neurons active iff pre-activation > 0; output neurons always active
-    active = np.zeros(totalN)
-    for l in range(1, L+1):
-        go = layer_offsets[l-1]
-        n = sizes[l]
-        if l < L:  # hidden layer
-            for i in range(n):
-                active[go + i] = 1.0 if h[l][i] > 0 else 0.0
-        else:  # output layer
-            active[go:go+n] = 1.0
-    negGradA = -gradA_bp * active
+    phi_diagonal = np.sum(full_jacobian**2, axis=1)
+    diagonal_prediction = -learning_rate * phi_diagonal * backprop_activity_gradient
 
-    # Per-layer kernel Phi (block-diagonal)
-    Phi = np.zeros((totalN, totalN))
-    for l in range(L):
-        go = layer_offsets[l]
-        n = sizes[l+1]
-        Jl = J[go:go+n, :]
-        Phi[go:go+n, go:go+n] = Jl @ Jl.T
+    kernel_prediction = compute_layer_local_prediction(
+        layer_sizes,
+        weight_matrices,
+        activities_by_layer,
+        pre_activations_by_layer,
+        loss_gradient_by_activity,
+        learning_rate,
+    )
 
-    return groundTruth, kernelPred, diagPred, negGradA, Phi, neuron_counts, layer_offsets, active
+    active_neuron_mask = np.zeros(total_neurons)
+    for layer_index in range(1, num_layers + 1):
+        layer_start = layer_offsets[layer_index - 1]
+        layer_width = layer_sizes[layer_index]
+        if layer_index < num_layers:
+            for neuron_index in range(layer_width):
+                active_neuron_mask[layer_start + neuron_index] = (
+                    1.0
+                    if pre_activations_by_layer[layer_index][neuron_index] > 0
+                    else 0.0
+                )
+        else:
+            active_neuron_mask[layer_start : layer_start + layer_width] = 1.0
 
-def corr(actual, pred):
-    if len(actual) < 2:
+    raw_negative_gradient = -backprop_activity_gradient * active_neuron_mask
+
+    layerwise_kernel_matrix = np.zeros((total_neurons, total_neurons))
+    for layer_index in range(num_layers):
+        layer_start = layer_offsets[layer_index]
+        layer_width = layer_sizes[layer_index + 1]
+        layer_jacobian = full_jacobian[layer_start : layer_start + layer_width, :]
+        layerwise_kernel_matrix[
+            layer_start : layer_start + layer_width,
+            layer_start : layer_start + layer_width,
+        ] = layer_jacobian @ layer_jacobian.T
+
+    return (
+        exact_activity_change,
+        kernel_prediction,
+        diagonal_prediction,
+        raw_negative_gradient,
+        layerwise_kernel_matrix,
+        neuron_counts,
+        active_neuron_mask,
+    )
+
+
+def corr(actual_values, predicted_values):
+    # Pearson correlation over neuron indices. This removes the mean first, so
+    # it measures centered linear alignment, not cosine similarity.
+    if len(actual_values) < 2:
         return 0.0
-    a_m = actual - np.mean(actual)
-    p_m = pred - np.mean(pred)
-    denom = np.sqrt(np.sum(a_m**2) * np.sum(p_m**2))
-    return np.sum(a_m * p_m) / denom if denom > 1e-30 else 0.0
+    centered_actual = actual_values - np.mean(actual_values)
+    centered_prediction = predicted_values - np.mean(predicted_values)
+    denominator = np.sqrt(np.sum(centered_actual**2) * np.sum(centered_prediction**2))
+    return (
+        np.sum(centered_actual * centered_prediction) / denominator
+        if denominator > 1e-30
+        else 0.0
+    )
+
 
 # ======================== RUN EXPERIMENT ========================
 
+
 def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
-    sizes = [16] + [width]*depth + [2]
-    sizes_tuple, W = create_network(sizes)
-    X, Y = make_bar_images(20)
-    B = len(X)
-    
-    history = {'step': [], 'loss': [], 'corr_ground': [], 'corr_kernel': [], 'corr_diag': [], 'corr_neg': []}
-    last_snap = None
+    """
+    Train one random MLP with online SGD and periodically compare the observed
+    single-step activity change against several predictions.
+
+    Most SGD steps only update weights. Every `diag_every` steps we also:
+      1. sample one training example,
+      2. compute J, Φ, and the predicted ΔA for that sample,
+      3. apply the real SGD step on that same sample,
+      4. measure the resulting activity change ΔA on that same sample.
+
+    The returned history contains:
+      corr_exact: r(actual ΔA, JΔW)
+      corr_kernel: r(actual ΔA, full kernel Eq. 3)
+      corr_diagonal: r(actual ΔA, diagonal Eq. 5)
+      corr_raw_gradient: r(actual ΔA, raw -dL/dA)
+    """
+    layer_sizes = [16] + [width] * depth + [2]
+    weight_matrices = create_network(layer_sizes)
+    training_inputs, training_targets = make_bar_images(20)
+    num_examples = len(training_inputs)
+
+    history = {
+        "step": [],
+        "loss": [],
+        "corr_exact": [],
+        "corr_kernel": [],
+        "corr_diagonal": [],
+        "corr_raw_gradient": [],
+    }
+    latest_snapshot = None
 
     for step in range(n_steps):
-        bi = np.random.randint(B)
-        a, h = forward(sizes, W, X[bi])
-        dLdA, dLdW = backprop(sizes, W, a, h, Y[bi])
+        sampled_example_index = np.random.randint(num_examples)
+        activities_by_layer, pre_activations_by_layer = forward(
+            weight_matrices, training_inputs[sampled_example_index]
+        )
+        loss_gradient_by_activity, loss_gradient_by_weights = backprop(
+            weight_matrices,
+            activities_by_layer,
+            pre_activations_by_layer,
+            training_targets[sampled_example_index],
+        )
 
-        do_diag = (step % diag_every == 0) or (step == n_steps - 1)
+        # Expensive diagnostics are only done periodically because building the
+        # full Jacobian scales poorly with width/depth.
+        should_compute_diagnostics = (step % diag_every == 0) or (step == n_steps - 1)
 
-        if do_diag:
-            a_before = np.concatenate([a[l] for l in range(1, len(W)+1)])
-            gt, kp, dp, ng, Phi, nc, lo, active = compute_jacobian_and_predictions(
-                sizes, W, a, h, dLdW, dLdA, Y[bi], eta)
+        if should_compute_diagnostics:
+            # Activities before the SGD step, flattened across all hidden/output
+            # layers so they can be compared directly to the flattened
+            # predictions returned by compute_jacobian_and_predictions().
+            activities_before_update = np.concatenate(
+                [
+                    activities_by_layer[layer_index]
+                    for layer_index in range(1, len(weight_matrices) + 1)
+                ]
+            )
+            (
+                exact_prediction,
+                kernel_prediction,
+                diagonal_prediction,
+                raw_negative_gradient,
+                layerwise_kernel_matrix,
+                neuron_counts,
+                active_neuron_mask,
+            ) = compute_jacobian_and_predictions(
+                layer_sizes,
+                weight_matrices,
+                activities_by_layer,
+                pre_activations_by_layer,
+                loss_gradient_by_weights,
+                loss_gradient_by_activity,
+                eta,
+            )
 
-            for l in range(len(W)):
-                W[l] -= eta * dLdW[l]
+            # Apply the real SGD step on this exact sampled example.
+            for layer_index in range(len(weight_matrices)):
+                weight_matrices[layer_index] -= (
+                    eta * loss_gradient_by_weights[layer_index]
+                )
 
-            a2, _ = forward(sizes, W, X[bi])
-            a_after = np.concatenate([a2[l] for l in range(1, len(W)+1)])
-            deltaA_full = a_after - a_before
+            updated_activities_by_layer, _ = forward(
+                weight_matrices, training_inputs[sampled_example_index]
+            )
+            activities_after_update = np.concatenate(
+                [
+                    updated_activities_by_layer[layer_index]
+                    for layer_index in range(1, len(weight_matrices) + 1)
+                ]
+            )
+            full_activity_change = activities_after_update - activities_before_update
 
-            # Filter to active neurons only
-            mask = active > 0
-            deltaA = deltaA_full[mask]
-            gt = gt[mask]; kp = kp[mask]; dp = dp[mask]; ng = ng[mask]
+            # Compare diagnostics only on active neurons. For dead hidden ReLUs,
+            # both the theory and the manuscript exclude them on that sample.
+            active_neuron_indices = active_neuron_mask > 0
+            actual_activity_change = full_activity_change[active_neuron_indices]
+            exact_prediction = exact_prediction[active_neuron_indices]
+            kernel_prediction = kernel_prediction[active_neuron_indices]
+            diagonal_prediction = diagonal_prediction[active_neuron_indices]
+            raw_negative_gradient = raw_negative_gradient[active_neuron_indices]
 
-            cg = corr(deltaA, gt)
-            ck = corr(deltaA, kp)
-            cd = corr(deltaA, dp)
-            cn = corr(deltaA, ng)
+            # These are the core diagnostics:
+            #   corr_exact ~= 1 checks the Jacobian bookkeeping
+            #   corr_kernel ~= 1 checks the exact kernel recursion
+            #   corr_diagonal measures how good Eq. 5 is
+            #   corr_raw_gradient measures alignment with the raw activity
+            #     gradient only and is stricter because Eq. 5 still allows
+            #     neuron-specific Φ_ii
+            exact_correlation = corr(actual_activity_change, exact_prediction)
+            kernel_correlation = corr(actual_activity_change, kernel_prediction)
+            diagonal_correlation = corr(actual_activity_change, diagonal_prediction)
+            raw_gradient_correlation = corr(
+                actual_activity_change, raw_negative_gradient
+            )
 
-            loss = 0
-            for b in range(B):
-                af, _ = forward(sizes, W, X[b])
-                loss += 0.5 * np.sum((af[-1] - Y[b])**2) / B
+            # Full-dataset loss after the step, used only for plotting dynamics.
+            average_loss = 0
+            for example_index in range(num_examples):
+                forward_activities, _ = forward(
+                    weight_matrices, training_inputs[example_index]
+                )
+                average_loss += (
+                    0.5
+                    * np.sum(
+                        (forward_activities[-1] - training_targets[example_index]) ** 2
+                    )
+                    / num_examples
+                )
 
-            history['step'].append(step)
-            history['loss'].append(loss)
-            history['corr_ground'].append(cg)
-            history['corr_kernel'].append(ck)
-            history['corr_diag'].append(cd)
-            history['corr_neg'].append(cn)
+            history["step"].append(step)
+            history["loss"].append(average_loss)
+            history["corr_exact"].append(exact_correlation)
+            history["corr_kernel"].append(kernel_correlation)
+            history["corr_diagonal"].append(diagonal_correlation)
+            history["corr_raw_gradient"].append(raw_gradient_correlation)
 
-            # Filter Phi and neuron counts for snapshot
-            active_idx = np.where(mask)[0]
-            Phi_filt = Phi[np.ix_(active_idx, active_idx)]
-            nc_filt = []
-            idx = 0
-            for count in nc:
-                nc_filt.append(int(np.sum(mask[idx:idx+count])))
-                idx += count
+            # Keep a filtered snapshot for the figure panels: only active neurons
+            # remain in the heatmap and scatter plots.
+            active_neuron_indices_flat = np.where(active_neuron_indices)[0]
+            filtered_kernel_matrix = layerwise_kernel_matrix[
+                np.ix_(active_neuron_indices_flat, active_neuron_indices_flat)
+            ]
+            filtered_neuron_counts = []
+            neuron_offset = 0
+            for layer_neuron_count in neuron_counts:
+                filtered_neuron_counts.append(
+                    int(
+                        np.sum(
+                            active_neuron_indices[
+                                neuron_offset : neuron_offset + layer_neuron_count
+                            ]
+                        )
+                    )
+                )
+                neuron_offset += layer_neuron_count
 
-            last_snap = {
-                'deltaA': deltaA, 'gt': gt, 'kp': kp, 'dp': dp, 'ng': ng,
-                'Phi': Phi_filt, 'nc': nc_filt, 'lo': lo, 'step': step
+            latest_snapshot = {
+                "actual_activity_change": actual_activity_change,
+                "exact_prediction": exact_prediction,
+                "kernel_prediction": kernel_prediction,
+                "diagonal_prediction": diagonal_prediction,
+                "raw_negative_gradient": raw_negative_gradient,
+                "Phi": filtered_kernel_matrix,
+                "neuron_counts": filtered_neuron_counts,
+                "step": step,
             }
         else:
-            for l in range(len(W)):
-                W[l] -= eta * dLdW[l]
+            # Cheap path: ordinary SGD with no Jacobian diagnostics.
+            for layer_index in range(len(weight_matrices)):
+                weight_matrices[layer_index] -= (
+                    eta * loss_gradient_by_weights[layer_index]
+                )
 
-    return history, last_snap, sizes
+    return history, latest_snapshot, layer_sizes
+
 
 # ======================== PLOTTING ========================
 
-LAYER_COLORS = ['#2563eb', '#0891b2', '#059669', '#d97706', '#dc2626']
+LAYER_COLORS = ["#2563eb", "#0891b2", "#059669", "#d97706", "#dc2626"]
 
-def plot_theta_heatmap(ax, Theta, neuron_counts, title_suffix=''):
-    N = Theta.shape[0]
-    diag = np.sqrt(np.diag(Theta))
-    diag[diag == 0] = 1
-    corr = Theta / np.outer(diag, diag)
-    corr = np.clip(corr, -1, 1)
-    
+
+def plot_phi_heatmap(ax, layerwise_kernel_matrix, neuron_counts, title_suffix=""):
+    total_neurons = layerwise_kernel_matrix.shape[0]
+    diagonal_norm = np.sqrt(np.diag(layerwise_kernel_matrix))
+    diagonal_norm[diagonal_norm == 0] = 1
+    correlation_matrix = layerwise_kernel_matrix / np.outer(
+        diagonal_norm, diagonal_norm
+    )
+    correlation_matrix = np.clip(correlation_matrix, -1, 1)
+
     cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
-        'rbu', [(1, 0.22, 0.22), (1, 1, 1), (0.22, 0.22, 1)])
-    ax.imshow(corr, cmap=cmap, vmin=-1, vmax=1, interpolation='nearest', aspect='equal')
-    
-    acc = 0
-    for l in range(len(neuron_counts)-1):
-        acc += neuron_counts[l]
-        ax.axhline(acc-0.5, color='k', linewidth=0.5, alpha=0.4)
-        ax.axvline(acc-0.5, color='k', linewidth=0.5, alpha=0.4)
-    
-    ax.set_xticks([]); ax.set_yticks([])
-    ax.set_title(r'$\Phi^{(\ell)}_{ik}$ correlation' + title_suffix, fontsize=9, fontweight='bold')
+        "rbu", [(1, 0.22, 0.22), (1, 1, 1), (0.22, 0.22, 1)]
+    )
+    ax.imshow(
+        correlation_matrix,
+        cmap=cmap,
+        vmin=-1,
+        vmax=1,
+        interpolation="nearest",
+        aspect="equal",
+    )
 
-def plot_scatter(ax, pred, actual, neuron_counts, label, eq_label):
-    xmax = max(np.max(np.abs(pred)), 1e-10) * 1.15
-    ymax = max(np.max(np.abs(actual)), 1e-10) * 1.15
+    boundary_offset = 0
+    for layer_index in range(len(neuron_counts) - 1):
+        boundary_offset += neuron_counts[layer_index]
+        ax.axhline(boundary_offset - 0.5, color="k", linewidth=0.5, alpha=0.4)
+        ax.axvline(boundary_offset - 0.5, color="k", linewidth=0.5, alpha=0.4)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title(
+        r"$\Phi^{(\ell)}_{ik}$ correlation" + title_suffix,
+        fontsize=9,
+        fontweight="bold",
+    )
+
+
+def plot_scatter(
+    ax,
+    predicted_activity_change,
+    actual_activity_change,
+    neuron_counts,
+    prediction_label,
+    panel_title,
+):
+    max_predicted_magnitude = max(np.max(np.abs(predicted_activity_change)), 1e-10)
+    max_actual_magnitude = max(np.max(np.abs(actual_activity_change)), 1e-10)
+    x_limit = max_predicted_magnitude * 1.15
+    y_limit = max_actual_magnitude * 1.15
 
     # Fit line through origin for correlation display
-    ax.axhline(0, color='#ddd8cc', linewidth=0.3)
-    ax.axvline(0, color='#ddd8cc', linewidth=0.3)
+    ax.axhline(0, color="#ddd8cc", linewidth=0.3)
+    ax.axvline(0, color="#ddd8cc", linewidth=0.3)
 
     # Best-fit line through origin
-    denom = np.dot(pred, pred)
-    if denom > 1e-30:
-        slope = np.dot(pred, actual) / denom
-        ax.plot([-xmax, xmax], [-xmax * slope, xmax * slope], '--', color='#b0a890', linewidth=1, zorder=1)
+    squared_prediction_norm = np.dot(
+        predicted_activity_change, predicted_activity_change
+    )
+    if squared_prediction_norm > 1e-30:
+        best_fit_slope = (
+            np.dot(predicted_activity_change, actual_activity_change)
+            / squared_prediction_norm
+        )
+        ax.plot(
+            [-x_limit, x_limit],
+            [-x_limit * best_fit_slope, x_limit * best_fit_slope],
+            "--",
+            color="#b0a890",
+            linewidth=1,
+            zorder=1,
+        )
 
-    idx = 0
-    for l, nc in enumerate(neuron_counts):
-        ax.scatter(pred[idx:idx+nc], actual[idx:idx+nc],
-                   c=LAYER_COLORS[l % len(LAYER_COLORS)], s=8, alpha=0.6,
-                   edgecolors='none', zorder=2, label=f'L{l+1} ({nc})')
-        idx += nc
+    neuron_offset = 0
+    for layer_index, layer_neuron_count in enumerate(neuron_counts):
+        ax.scatter(
+            predicted_activity_change[
+                neuron_offset : neuron_offset + layer_neuron_count
+            ],
+            actual_activity_change[neuron_offset : neuron_offset + layer_neuron_count],
+            c=LAYER_COLORS[layer_index % len(LAYER_COLORS)],
+            s=8,
+            alpha=0.6,
+            edgecolors="none",
+            zorder=2,
+            label=f"L{layer_index + 1} ({layer_neuron_count})",
+        )
+        neuron_offset += layer_neuron_count
 
-    rv = corr(actual, pred)
-    ax.set_xlim(-xmax, xmax); ax.set_ylim(-ymax, ymax)
-    ax.set_xlabel(f'predicted ({label})', fontsize=6)
-    ax.set_ylabel(r'actual $\Delta A$', fontsize=6)
+    correlation_value = corr(actual_activity_change, predicted_activity_change)
+    ax.set_xlim(-x_limit, x_limit)
+    ax.set_ylim(-y_limit, y_limit)
+    ax.set_xlabel(f"predicted ({prediction_label})", fontsize=6)
+    ax.set_ylabel(r"actual $\Delta A$", fontsize=6)
     ax.tick_params(labelsize=5)
-    ax.set_title(f'{eq_label}\n$r = {rv:.3f}$', fontsize=7, fontweight='bold', pad=3)
+    ax.set_title(
+        f"{panel_title}\n$r = {correlation_value:.3f}$",
+        fontsize=7,
+        fontweight="bold",
+        pad=3,
+    )
+
 
 def plot_dynamics(ax, history, show_loss_label=True):
-    steps = history['step']
-    ax.plot(steps, history['corr_neg'], '-', color='#d97706', linewidth=1.2, label=r'$r(\Delta A,\;-dL/dA)$')
+    diagnostic_steps = history["step"]
+    # The dynamics panel tracks the diagonal-approximation metric directly:
+    # corr_diagonal = r(actual ΔA, Eq. 5 prediction).
+    ax.plot(
+        diagnostic_steps,
+        history["corr_diagonal"],
+        "-",
+        color="#d97706",
+        linewidth=1.2,
+        label=r"$r(\Delta A,\;-\Phi_{ii}\,\partial L/\partial A_i)$",
+    )
 
     ax2 = ax.twinx()
-    ax2.plot(steps, history['loss'], '--', color='#d44a', linewidth=0.8, label='loss')
+    ax2.plot(
+        diagnostic_steps,
+        history["loss"],
+        "--",
+        color="#d44a",
+        linewidth=0.8,
+        label="loss",
+    )
     if show_loss_label:
-        ax2.set_ylabel('loss', fontsize=7, color='#d44a')
-        ax2.tick_params(labelsize=5, colors='#d44a')
+        ax2.set_ylabel("loss", fontsize=7, color="#d44a")
+        ax2.tick_params(labelsize=5, colors="#d44a")
     else:
         ax2.set_yticklabels([])
         ax2.tick_params(right=False)
 
-    ax.axhline(1, color='#e8e5dd', linestyle='--', linewidth=0.5)
-    ax.axhline(0, color='#e8e5dd', linewidth=0.5)
+    ax.axhline(1, color="#e8e5dd", linestyle="--", linewidth=0.5)
+    ax.axhline(0, color="#e8e5dd", linewidth=0.5)
     ax.set_ylim(-0.5, 1.1)
-    ax.set_xlabel('SGD step', fontsize=7)
-    ax.set_ylabel(r'$r$', fontsize=7)
+    ax.set_xlabel("SGD step", fontsize=7)
+    ax.set_ylabel(r"$r$", fontsize=7)
     ax.tick_params(labelsize=6)
-    ax.legend(fontsize=5.5, loc='lower left', framealpha=0.8)
+    ax.legend(fontsize=5.5, loc="lower left", framealpha=0.8)
+
 
 # ======================== MAIN ========================
 
 print("Running width=8 experiment...")
-h8, snap8, sizes8 = run_experiment(width=8, depth=3, eta=0.005, n_steps=3000, diag_every=30)
+history_width_8, snapshot_width_8, _ = run_experiment(
+    width=8, depth=3, eta=0.005, n_steps=3000, diag_every=30
+)
 
 print("Running width=48 experiment...")
-h48, snap48, sizes48 = run_experiment(width=48, depth=3, eta=0.005, n_steps=3000, diag_every=30)
+history_width_48, snapshot_width_48, _ = run_experiment(
+    width=48, depth=3, eta=0.005, n_steps=3000, diag_every=30
+)
 
 # ---- FIGURE: 2-row comparison ----
-fig = plt.figure(figsize=(7.0, 6.2), dpi=200)
-fig.patch.set_facecolor('#faf9f6')
+figure_one = plt.figure(figsize=(7.0, 6.2), dpi=200)
+figure_one.patch.set_facecolor("#faf9f6")
 
-gs = GridSpec(3, 4, figure=fig, hspace=0.65, wspace=0.55,
-              left=0.07, right=0.97, top=0.95, bottom=0.07)
+grid_spec = GridSpec(
+    3,
+    4,
+    figure=figure_one,
+    hspace=0.65,
+    wspace=0.55,
+    left=0.07,
+    right=0.97,
+    top=0.95,
+    bottom=0.07,
+)
 
 
 # Row 1: width=8
-ax1 = fig.add_subplot(gs[0, 0])
-plot_theta_heatmap(ax1, snap8['Phi'], snap8['nc'], ' (width=8)')
+heatmap_ax_width_8 = figure_one.add_subplot(grid_spec[0, 0])
+plot_phi_heatmap(
+    heatmap_ax_width_8,
+    snapshot_width_8["Phi"],
+    snapshot_width_8["neuron_counts"],
+    " (width=8)",
+)
 
-ax3 = fig.add_subplot(gs[0, 1])
-plot_scatter(ax3, snap8['kp'], snap8['deltaA'], snap8['nc'],
-             r'$\Phi\cdot\nabla L$', 'Eq. 3 (kernel)')
+kernel_scatter_ax_width_8 = figure_one.add_subplot(grid_spec[0, 1])
+plot_scatter(
+    kernel_scatter_ax_width_8,
+    snapshot_width_8["kernel_prediction"],
+    snapshot_width_8["actual_activity_change"],
+    snapshot_width_8["neuron_counts"],
+    r"$\Phi\cdot\nabla L$",
+    "Eq. 3 (kernel)",
+)
 
-ax4 = fig.add_subplot(gs[0, 2])
-plot_scatter(ax4, snap8['dp'], snap8['deltaA'], snap8['nc'],
-             r'diag $\Phi$', 'Eq. 5 (diagonal)')
+diagonal_scatter_ax_width_8 = figure_one.add_subplot(grid_spec[0, 2])
+plot_scatter(
+    diagonal_scatter_ax_width_8,
+    snapshot_width_8["diagonal_prediction"],
+    snapshot_width_8["actual_activity_change"],
+    snapshot_width_8["neuron_counts"],
+    r"$-\Phi_{ii}\,\partial L/\partial A_i$",
+    r"$-\Phi_{ii}\,\partial L/\partial A_i$",
+)
 
-ax4b = fig.add_subplot(gs[0, 3])
-plot_scatter(ax4b, snap8['ng'], snap8['deltaA'], snap8['nc'],
-             r'$-\partial L/\partial A$', r'$-dL/dA$ (raw)')
-ax4b.legend(fontsize=4.5, loc='lower right', framealpha=0.8, markerscale=0.8)
+raw_gradient_scatter_ax_width_8 = figure_one.add_subplot(grid_spec[0, 3])
+plot_scatter(
+    raw_gradient_scatter_ax_width_8,
+    snapshot_width_8["raw_negative_gradient"],
+    snapshot_width_8["actual_activity_change"],
+    snapshot_width_8["neuron_counts"],
+    r"$-\partial L/\partial A$",
+    r"$-dL/dA$ (raw)",
+)
+raw_gradient_scatter_ax_width_8.legend(
+    fontsize=4.5, loc="lower right", framealpha=0.8, markerscale=0.8
+)
 
 # Row 2: width=48
-ax5 = fig.add_subplot(gs[1, 0])
-plot_theta_heatmap(ax5, snap48['Phi'], snap48['nc'], ' (width=48)')
+heatmap_ax_width_48 = figure_one.add_subplot(grid_spec[1, 0])
+plot_phi_heatmap(
+    heatmap_ax_width_48,
+    snapshot_width_48["Phi"],
+    snapshot_width_48["neuron_counts"],
+    " (width=48)",
+)
 
-ax7 = fig.add_subplot(gs[1, 1])
-plot_scatter(ax7, snap48['kp'], snap48['deltaA'], snap48['nc'],
-             r'$\Phi\cdot\nabla L$', 'Eq. 3 (kernel)')
+kernel_scatter_ax_width_48 = figure_one.add_subplot(grid_spec[1, 1])
+plot_scatter(
+    kernel_scatter_ax_width_48,
+    snapshot_width_48["kernel_prediction"],
+    snapshot_width_48["actual_activity_change"],
+    snapshot_width_48["neuron_counts"],
+    r"$\Phi\cdot\nabla L$",
+    "Eq. 3 (kernel)",
+)
 
-ax8 = fig.add_subplot(gs[1, 2])
-plot_scatter(ax8, snap48['dp'], snap48['deltaA'], snap48['nc'],
-             r'diag $\Phi$', 'Eq. 5 (diagonal)')
+diagonal_scatter_ax_width_48 = figure_one.add_subplot(grid_spec[1, 2])
+plot_scatter(
+    diagonal_scatter_ax_width_48,
+    snapshot_width_48["diagonal_prediction"],
+    snapshot_width_48["actual_activity_change"],
+    snapshot_width_48["neuron_counts"],
+    r"$-\Phi_{ii}\,\partial L/\partial A_i$",
+    r"$-\Phi_{ii}\,\partial L/\partial A_i$",
+)
 
-ax8b = fig.add_subplot(gs[1, 3])
-plot_scatter(ax8b, snap48['ng'], snap48['deltaA'], snap48['nc'],
-             r'$-\partial L/\partial A$', r'$-dL/dA$ (raw)')
+raw_gradient_scatter_ax_width_48 = figure_one.add_subplot(grid_spec[1, 3])
+plot_scatter(
+    raw_gradient_scatter_ax_width_48,
+    snapshot_width_48["raw_negative_gradient"],
+    snapshot_width_48["actual_activity_change"],
+    snapshot_width_48["neuron_counts"],
+    r"$-\partial L/\partial A$",
+    r"$-dL/dA$ (raw)",
+)
 
 # Row 3: Training dynamics side by side
-ax9 = fig.add_subplot(gs[2, :2])
-plot_dynamics(ax9, h8, show_loss_label=False)
-ax9.set_title('Training dynamics (width=8)', fontsize=8, fontweight='bold')
+dynamics_ax_width_8 = figure_one.add_subplot(grid_spec[2, :2])
+plot_dynamics(dynamics_ax_width_8, history_width_8, show_loss_label=False)
+dynamics_ax_width_8.set_title(
+    "Training dynamics (width=8)", fontsize=8, fontweight="bold"
+)
 
-ax10 = fig.add_subplot(gs[2, 2:])
-plot_dynamics(ax10, h48, show_loss_label=True)
-ax10.set_title('Training dynamics (width=48)', fontsize=8, fontweight='bold')
+dynamics_ax_width_48 = figure_one.add_subplot(grid_spec[2, 2:])
+plot_dynamics(dynamics_ax_width_48, history_width_48, show_loss_label=True)
+dynamics_ax_width_48.set_title(
+    "Training dynamics (width=48)", fontsize=8, fontweight="bold"
+)
 
-plt.savefig('/Users/konrad_1/AvsWdescent/fig_ntk.pdf', bbox_inches='tight', facecolor='#faf9f6')
-plt.savefig('/Users/konrad_1/AvsWdescent/fig_ntk.png', bbox_inches='tight', facecolor='#faf9f6')
+# Save into the current project directory instead of an author-local path.
+plt.savefig("fig_ntk.pdf", bbox_inches="tight", facecolor="#faf9f6")
+plt.savefig("fig_ntk.png", bbox_inches="tight", facecolor="#faf9f6")
 print("Figure 1 saved.")
 
 # ======================== WIDTH SWEEP ========================
@@ -410,59 +799,94 @@ n_seeds = 3
 n_steps_sweep = 2000
 diag_every_sweep = 40
 
-# For each width, collect median corr of diagonal approx over training, per seed
-width_corr_median = {w: [] for w in widths}
-width_corr_final = {w: [] for w in widths}
-width_neg_median = {w: [] for w in widths}
-width_neg_final = {w: [] for w in widths}
+# For each width, collect summary statistics of the diagonal-approximation
+# correlation over training.
+width_diagonal_corr_median = {width_value: [] for width_value in widths}
+width_diagonal_corr_final = {width_value: [] for width_value in widths}
 
-for w in widths:
-    print(f"  Width sweep: w={w} ...", flush=True)
+for width_value in widths:
+    print(f"  Width sweep: w={width_value} ...", flush=True)
     for seed in range(n_seeds):
-        np.random.seed(1000 + seed * 100 + w)
-        h, snap, _ = run_experiment(width=w, depth=3, eta=0.005,
-                                     n_steps=n_steps_sweep, diag_every=diag_every_sweep)
-        corr_vals = h['corr_diag']
-        width_corr_median[w].append(np.median(corr_vals))
-        width_corr_final[w].append(np.mean(corr_vals[-5:]))
-        neg_vals = h['corr_neg']
-        width_neg_median[w].append(np.median(neg_vals))
-        width_neg_final[w].append(np.mean(neg_vals[-5:]))
+        np.random.seed(1000 + seed * 100 + width_value)
+        history, _, _ = run_experiment(
+            width=width_value,
+            depth=3,
+            eta=0.005,
+            n_steps=n_steps_sweep,
+            diag_every=diag_every_sweep,
+        )
+        # If the diagonal approximation itself improves with width, this is the
+        # directly relevant metric to inspect.
+        diagonal_corr_values = history["corr_diagonal"]
+        width_diagonal_corr_median[width_value].append(np.median(diagonal_corr_values))
+        width_diagonal_corr_final[width_value].append(
+            np.mean(diagonal_corr_values[-5:])
+        )
 
 # Compute mean and std across seeds
-w_arr = np.array(widths)
-median_mean = np.array([np.mean(width_corr_median[w]) for w in widths])
-median_std = np.array([np.std(width_corr_median[w]) for w in widths])
-final_mean = np.array([np.mean(width_corr_final[w]) for w in widths])
-final_std = np.array([np.std(width_corr_final[w]) for w in widths])
+width_array = np.array(widths)
+median_diagonal_corr_mean = np.array(
+    [np.mean(width_diagonal_corr_median[width_value]) for width_value in widths]
+)
+median_diagonal_corr_std = np.array(
+    [np.std(width_diagonal_corr_median[width_value]) for width_value in widths]
+)
+late_diagonal_corr_mean = np.array(
+    [np.mean(width_diagonal_corr_final[width_value]) for width_value in widths]
+)
+late_diagonal_corr_std = np.array(
+    [np.std(width_diagonal_corr_final[width_value]) for width_value in widths]
+)
 
-fig2, ax = plt.subplots(figsize=(3.8, 2.8), dpi=200)
-fig2.patch.set_facecolor('#faf9f6')
+width_sweep_figure, width_sweep_ax = plt.subplots(figsize=(3.8, 2.8), dpi=200)
+width_sweep_figure.patch.set_facecolor("#faf9f6")
 
-neg_final_mean = np.array([np.mean(width_neg_final[w]) for w in widths])
-neg_final_std = np.array([np.std(width_neg_final[w]) for w in widths])
-neg_median_mean = np.array([np.mean(width_neg_median[w]) for w in widths])
-neg_median_std = np.array([np.std(width_neg_median[w]) for w in widths])
+width_sweep_ax.fill_between(
+    width_array,
+    late_diagonal_corr_mean - late_diagonal_corr_std,
+    late_diagonal_corr_mean + late_diagonal_corr_std,
+    color="#d97706",
+    alpha=0.15,
+)
+width_sweep_ax.plot(
+    width_array,
+    late_diagonal_corr_mean,
+    "o-",
+    color="#d97706",
+    linewidth=1.5,
+    markersize=4,
+    label=r"late training $r$",
+)
 
-ax.fill_between(w_arr, neg_final_mean - neg_final_std, neg_final_mean + neg_final_std,
-                color='#d97706', alpha=0.15)
-ax.plot(w_arr, neg_final_mean, 'o-', color='#d97706', linewidth=1.5, markersize=4,
-        label=r'late training $r$')
+width_sweep_ax.fill_between(
+    width_array,
+    median_diagonal_corr_mean - median_diagonal_corr_std,
+    median_diagonal_corr_mean + median_diagonal_corr_std,
+    color="#2563eb",
+    alpha=0.15,
+)
+width_sweep_ax.plot(
+    width_array,
+    median_diagonal_corr_mean,
+    "s--",
+    color="#2563eb",
+    linewidth=1.2,
+    markersize=3.5,
+    label=r"median $r$",
+)
 
-ax.fill_between(w_arr, neg_median_mean - neg_median_std, neg_median_mean + neg_median_std,
-                color='#2563eb', alpha=0.15)
-ax.plot(w_arr, neg_median_mean, 's--', color='#2563eb', linewidth=1.2, markersize=3.5,
-        label=r'median $r$')
+width_sweep_ax.axhline(1, color="#e8e5dd", linestyle="--", linewidth=0.5)
+width_sweep_ax.axhline(0, color="#e8e5dd", linewidth=0.5)
+width_sweep_ax.set_xlabel("hidden layer width", fontsize=8)
+width_sweep_ax.set_ylabel(
+    r"$r(\Delta A,\;-\Phi_{ii}\,\partial L/\partial A_i)$", fontsize=8
+)
+width_sweep_ax.tick_params(labelsize=7)
+width_sweep_ax.legend(fontsize=7, loc="lower right", framealpha=0.8)
+width_sweep_ax.set_ylim(0.5, 1.05)
+width_sweep_ax.set_xlim(0, widths[-1] + 4)
 
-ax.axhline(1, color='#e8e5dd', linestyle='--', linewidth=0.5)
-ax.axhline(0, color='#e8e5dd', linewidth=0.5)
-ax.set_xlabel('hidden layer width', fontsize=8)
-ax.set_ylabel(r'$r(\Delta A,\; -\partial L/\partial A)$', fontsize=8)
-ax.tick_params(labelsize=7)
-ax.legend(fontsize=7, loc='lower right', framealpha=0.8)
-ax.set_ylim(-0.5, 1.1)
-ax.set_xlim(0, widths[-1] + 4)
-
-plt.savefig('/Users/konrad_1/AvsWdescent/fig_width_sweep.pdf', bbox_inches='tight', facecolor='#faf9f6')
-plt.savefig('/Users/konrad_1/AvsWdescent/fig_width_sweep.png', bbox_inches='tight', facecolor='#faf9f6')
+# Save into the current project directory instead of an author-local path.
+plt.savefig("fig_width_sweep.pdf", bbox_inches="tight", facecolor="#faf9f6")
+plt.savefig("fig_width_sweep.png", bbox_inches="tight", facecolor="#faf9f6")
 print("Figure 2 (width sweep) saved.")
