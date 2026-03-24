@@ -331,16 +331,16 @@ function drawHeatmap(canvas, Phi, totalN, neuronCounts) {
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  const corr = new Float64Array(totalN * totalN);
-  for (let i = 0; i < totalN; i++)
-    for (let j = 0; j < totalN; j++) {
-      const dii = Phi[i * totalN + i], djj = Phi[j * totalN + j];
-      corr[i * totalN + j] = (dii > 0 && djj > 0) ? Phi[i * totalN + j] / Math.sqrt(dii * djj) : 0;
-    }
+  let maxAbs = 0;
+  for (let i = 0; i < Phi.length; i++) {
+    const av = Math.abs(Phi[i]);
+    if (av > maxAbs) maxAbs = av;
+  }
+  if (maxAbs === 0) maxAbs = 1;
   const cW = W / totalN, cH = H / totalN;
   for (let i = 0; i < totalN; i++)
     for (let j = 0; j < totalN; j++) {
-      const v = Math.max(-1, Math.min(1, corr[i * totalN + j]));
+      const v = Math.max(-1, Math.min(1, Phi[i * totalN + j] / maxAbs));
       if (v >= 0) ctx.fillStyle = `rgb(${255 - Math.round(v * 200)},${255 - Math.round(v * 200)},255)`;
       else ctx.fillStyle = `rgb(255,${255 + Math.round(v * 200)},${255 + Math.round(v * 200)})`;
       ctx.fillRect(Math.floor(j * cW), Math.floor(i * cH), Math.ceil(cW) + 1, Math.ceil(cH) + 1);
@@ -353,6 +353,7 @@ function drawHeatmap(canvas, Phi, totalN, neuronCounts) {
     ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke();
   }
+  return maxAbs;
 }
 
 function drawScatter(canvas, pred, actual, neuronCounts, label, independentAxes) {
@@ -421,11 +422,11 @@ function corrfn(actual, pred) {
 // ======================== COMPONENT ========================
 
 const LCOLORS = ["#2563eb", "#0891b2", "#059669", "#d97706"];
-const MODES = ["negGradA", "diagBP", "kernel"];
+const MODES = ["kernel", "diagBP", "negGradA"];
 const MODE_LABELS = {
-  kernel: "\u03A6\u00B7\u2207L (kernel)",
-  diagBP: "diag \u03A6 (scaled)",
-  negGradA: "\u2212dL/dA (raw)",
+  kernel: "Eq. 3: \u03A6\u00B7\u2207L",
+  diagBP: "Eq. 5: \u2212\u03A6\u1D62\u1D62\u00B7\u2202L/\u2202A",
+  negGradA: "\u2212\u2202L/\u2202A (raw)",
 };
 
 function App() {
@@ -437,9 +438,10 @@ function App() {
   const [metrics, setMetrics] = useState({});
   const [history, setHistory] = useState([]);
   const [running, setRunning] = useState(false);
-  const [scatterMode, setScatterMode] = useState("negGradA");
+  const [scatterMode, setScatterMode] = useState("diagBP");
   const [stimulus, setStimulus] = useState(null);
   const [stimLabel, setStimLabel] = useState("");
+  const [phiScale, setPhiScale] = useState(0);
 
   const netRef = useRef(null);
   const dataRef = useRef(null);
@@ -457,6 +459,7 @@ function App() {
     dataRef.current = makeBarImages(20);
     stepRef.current = 0;
     setStep(0); setMetrics({}); setHistory([]);
+    setPhiScale(0);
     lastData.current = null;
     if (heatRef.current) heatRef.current.getContext("2d").clearRect(0, 0, 340, 340);
     if (scatRef.current) scatRef.current.getContext("2d").clearRect(0, 0, 340, 340);
@@ -562,7 +565,7 @@ function App() {
         for (let i = 0; i < aN; i++)
           for (let j = 0; j < aN; j++)
             filtPhi[i * aN + j] = Phi[activeIdx[i] * totalN + activeIdx[j]];
-        drawHeatmap(heatRef.current, filtPhi, aN, neuronCounts);
+        setPhiScale(drawHeatmap(heatRef.current, filtPhi, aN, neuronCounts) || 0);
       }
       lastData.current = { preds, actual, neuronCounts };
       drawScatter(scatRef.current, preds[scatterMode], actual, neuronCounts, MODE_LABELS[scatterMode], scatterMode === "negGradA");
@@ -570,7 +573,7 @@ function App() {
       setMetrics({ loss: totalLoss, r2Raw, r2K, r2D });
       setHistory(h => [...h, {
         step: stepRef.current, loss: +totalLoss.toFixed(5),
-        "r raw": +r2Raw.toFixed(4), "r kernel": +r2K.toFixed(4), "r scaled": +r2D.toFixed(4),
+        "r Eq.3": +r2K.toFixed(4), "r Eq.5": +r2D.toFixed(4), "r raw": +r2Raw.toFixed(4),
       }]);
     } else {
       const totalLoss = cheapStep();
@@ -607,6 +610,13 @@ function App() {
   }, [running, doStep, cheapStep, diagEvery]);
 
   const fmt = (v, d = 3) => v != null ? v.toFixed(d) : "\u2014";
+  const fmtPhi = v => {
+    if (!v) return "\u2014";
+    if (v >= 1000 || v < 0.01) return v.toExponential(1);
+    if (v < 1) return v.toFixed(3);
+    if (v < 10) return v.toFixed(2);
+    return v.toFixed(1);
+  };
   const sizes = [16, ...Array(depth).fill(width), 2];
   const totalN = sizes.slice(1).reduce((s, n) => s + n, 0);
   const m = metrics;
@@ -625,10 +635,10 @@ function App() {
 
         <div style={{ borderBottom: "2px solid #2a2a2e", paddingBottom: 8, marginBottom: 14 }}>
           <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>
-            If synapses that should strengthen do, neurons that should fire more do
+            Weight-space gradient descent induces approximate activity descent
           </h1>
           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#6b6860", fontFamily: "monospace" }}>
-            If weights do gradient descent, activities must too (approximately, in wide networks)
+            making learning rules testable
             {" · "}
             <a href="https://github.com/koerding/ADescent/raw/main/activity_dynamics.pdf" style={{ color: "#2563eb" }}>Paper</a>
             {" · "}
@@ -700,9 +710,9 @@ function App() {
             <span style={{ fontSize: 9, color: "#888" }}>{stimLabel}</span>
           </span>}
           <span>loss: <b>{fmt(m.loss, 4)}</b></span>
+          <span style={{ color: "#2563eb" }}>r<sub style={{fontSize:9}}>Eq.3</sub>: <b>{fmt(m.r2K)}</b></span>
+          <span style={{ color: "#059669" }}>r<sub style={{fontSize:9}}>Eq.5</sub>: <b>{fmt(m.r2D)}</b></span>
           <span style={{ color: "#888" }}>r<sub style={{fontSize:9}}>raw</sub>: <b>{fmt(m.r2Raw)}</b></span>
-          <span style={{ color: "#2563eb" }}>r<sub style={{fontSize:9}}>kernel</sub>: <b>{fmt(m.r2K)}</b></span>
-          <span style={{ color: "#059669" }}>r<sub style={{fontSize:9}}>scaled</sub>: <b>{fmt(m.r2D)}</b></span>
         </div>
 
         <div style={{ background: "#fff", border: "1px solid #e0ddd5", borderRadius: 4, padding: 14, marginBottom: 14 }}>
@@ -723,15 +733,15 @@ function App() {
                     color: scatterMode === mode ? "#fff" : "#666",
                     cursor: "pointer", fontFamily: "monospace", fontSize: 10,
                   }}>
-                  {mode === "negGradA" ? "raw" : mode === "diagBP" ? "scaled" : "kernel"}
+                  {mode === "kernel" ? "Eq.3" : mode === "diagBP" ? "Eq.5" : "raw"}
                 </button>
               ))}
             </div>
           </div>
           <div style={{ fontSize: 11, color: "#888", marginBottom: 8, fontFamily: "monospace" }}>
-            {scatterMode === "negGradA" && "Raw activity gradient \u2014 the experimentally testable prediction (active neurons only)"}
-            {scatterMode === "diagBP" && "Gradient scaled by per-neuron \u03A6\u1D62\u1D62 \u2014 corrects for parameter count (active neurons only)"}
-            {scatterMode === "kernel" && "Per-layer kernel \u03A6 prediction \u2014 includes within-layer coupling (active neurons only)"}
+            {scatterMode === "kernel" && "Eq. 3: exact per-layer kernel prediction using the full backpropagated activity gradient"}
+            {scatterMode === "diagBP" && "Eq. 5: diagonal approximation \u2212\u03A6\u1D62\u1D62 \u00B7 \u2202L/\u2202A\u1D62 for active neurons only"}
+            {scatterMode === "negGradA" && "Raw \u2212\u2202L/\u2202A baseline: direction only, ignoring neuron-specific \u03A6\u1D62\u1D62 scaling"}
           </div>
           <div style={{ display: "flex", justifyContent: "center" }}>
             <canvas ref={scatRef} width={540} height={540}
@@ -751,7 +761,7 @@ function App() {
           <div style={{ background: "#fff", border: "1px solid #e0ddd5", borderRadius: 4, padding: 10 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Training dynamics</div>
             <div style={{ fontSize: 10, color: "#888", marginBottom: 6, fontFamily: "monospace" }}>
-              SGD every step; Jacobian/{"\u03A6"} recomputed every {diagEvery} steps. Gap between kernel and scaled = cost of diagonal approx.
+              SGD every step; Jacobian and per-layer {"\u03A6"} recomputed every {diagEvery} steps. Eq. 3 is exact; Eq. 5 is the diagonal approximation.
             </div>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={chartData} margin={{ top: 2, right: 40, bottom: 2, left: 8 }}>
@@ -762,30 +772,30 @@ function App() {
                 <Tooltip contentStyle={{ fontSize: 10, fontFamily: "monospace" }} />
                 <ReferenceLine yAxisId="left" y={1} stroke="#e8e5dd" strokeDasharray="4 4" />
                 <ReferenceLine yAxisId="left" y={0} stroke="#e8e5dd" />
+                <Line yAxisId="left" type="monotone" dataKey="r Eq.3" stroke="#2563eb" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                <Line yAxisId="left" type="monotone" dataKey="r Eq.5" stroke="#059669" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 <Line yAxisId="left" type="monotone" dataKey="r raw" stroke="#aaa" strokeWidth={1} dot={false} isAnimationActive={false} strokeDasharray="3 2" />
-                <Line yAxisId="left" type="monotone" dataKey="r kernel" stroke="#2563eb" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                <Line yAxisId="left" type="monotone" dataKey="r scaled" stroke="#059669" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 <Line yAxisId="right" type="monotone" dataKey="loss" stroke="#d4a" strokeWidth={1} dot={false} isAnimationActive={false} strokeDasharray="4 3" />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
           <div style={{ background: "#fff", border: "1px solid #e0ddd5", borderRadius: 4, padding: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{"\u03A6"}<sup>({"\u2113"})</sup><sub>ik</sub> correlation (active neurons only)</div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>raw {"\u03A6"}<sup>({"\u2113"})</sup><sub>ik</sub> (active neurons only)</div>
             <div style={{ fontSize: 10, color: "#888", marginBottom: 6, fontFamily: "monospace" }}>
-              {"\u03A6"}<sub>ik</sub>{"/\u221A(\u03A6"}<sub>ii</sub>{"\u03A6"}<sub>kk</sub>{") \u00B7 block-diagonal by layer"}
+              per-layer kernel values with a live symmetric color scale; block-diagonal because only same-layer couplings are shown
             </div>
             <canvas ref={heatRef} width={340} height={340}
               style={{ width: "100%", maxWidth: 340, height: "auto", aspectRatio: "1", imageRendering: "pixelated", border: "1px solid #eee" }} />
             <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 5, fontSize: 9, fontFamily: "monospace", color: "#888" }}>
-              {[["rgb(255,55,55)", "\u22121"], ["#fff", "0"], ["rgb(55,55,255)", "+1"]].map(([c, l]) => (
+              {[["rgb(255,55,55)", "\u2212" + fmtPhi(phiScale)], ["#fff", "0"], ["rgb(55,55,255)", "+" + fmtPhi(phiScale)]].map(([c, l]) => (
                 <span key={l} style={{ display: "flex", alignItems: "center", gap: 2 }}>
                   <span style={{ width: 9, height: 9, background: c, border: "1px solid #ccc", display: "inline-block" }} />{l}
                 </span>
               ))}
             </div>
             <div style={{ fontSize: 10, color: "#6b6860", marginTop: 8, lineHeight: 1.5 }}>
-              Per-layer kernel: how learning in one neuron influences same-layer neurons through shared upstream weights. Block-diagonal by construction.
+              Eq. 3 uses this per-layer kernel exactly. Eq. 5 keeps only the diagonal terms \u03A6\u1D62\u1D62.
             </div>
           </div>
         </div>
