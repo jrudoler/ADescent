@@ -326,16 +326,16 @@ function makeBarImages(nPerClass) {
 
 // ======================== CANVAS ========================
 
-function drawHeatmap(canvas, Theta, totalN, neuronCounts) {
-  if (!canvas || !Theta) return;
+function drawHeatmap(canvas, Phi, totalN, neuronCounts) {
+  if (!canvas || !Phi) return;
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
   const corr = new Float64Array(totalN * totalN);
   for (let i = 0; i < totalN; i++)
     for (let j = 0; j < totalN; j++) {
-      const dii = Theta[i * totalN + i], djj = Theta[j * totalN + j];
-      corr[i * totalN + j] = (dii > 0 && djj > 0) ? Theta[i * totalN + j] / Math.sqrt(dii * djj) : 0;
+      const dii = Phi[i * totalN + i], djj = Phi[j * totalN + j];
+      corr[i * totalN + j] = (dii > 0 && djj > 0) ? Phi[i * totalN + j] / Math.sqrt(dii * djj) : 0;
     }
   const cW = W / totalN, cH = H / totalN;
   for (let i = 0; i < totalN; i++)

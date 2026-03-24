@@ -178,16 +178,16 @@ function computeAllPredictions(net, fwd, dLdW, dLdA, target, eta) {
   // Ground truth: J @ deltaW
   const groundTruth = matVec(J, totalN, totalParams, deltaW);
 
-  // Full Theta: -eta * J @ (J^T @ gradA_partial)
+  // Full Phi: -eta * J @ (J^T @ gradA_partial)
   const JtGp = new Float64Array(totalParams);
   for (let alpha = 0; alpha < totalParams; alpha++) {
     let s = 0;
     for (let i = 0; i < totalN; i++) s += J[i * totalParams + alpha] * gradA_partial[i];
     JtGp[alpha] = s;
   }
-  const thetaGradP = matVec(J, totalN, totalParams, JtGp);
-  const fullThetaPred = new Float64Array(totalN);
-  for (let i = 0; i < totalN; i++) fullThetaPred[i] = -eta * thetaGradP[i];
+  const phiGradP = matVec(J, totalN, totalParams, JtGp);
+  const fullPhiPred = new Float64Array(totalN);
+  for (let i = 0; i < totalN; i++) fullPhiPred[i] = -eta * phiGradP[i];
 
   // Diagonal: -eta * ||J_row_i||^2 * gradA_bp[i]
   const diagPred = new Float64Array(totalN);
@@ -198,22 +198,22 @@ function computeAllPredictions(net, fwd, dLdW, dLdA, target, eta) {
     diagPred[i] = -eta * rowNorm * gradA_bp[i];
   }
 
-  // Theta for heatmap
-  let Theta = null;
+  // Phi for heatmap
+  let Phi = null;
   if (totalN <= 200) {
-    Theta = new Float64Array(totalN * totalN);
+    Phi = new Float64Array(totalN * totalN);
     for (let i = 0; i < totalN; i++) {
       for (let j = i; j < totalN; j++) {
         let s = 0;
         const ri = i * totalParams, rj = j * totalParams;
         for (let k = 0; k < totalParams; k++) s += J[ri + k] * J[rj + k];
-        Theta[i * totalN + j] = s;
-        if (i !== j) Theta[j * totalN + i] = s;
+        Phi[i * totalN + j] = s;
+        if (i !== j) Phi[j * totalN + i] = s;
       }
     }
   }
 
-  return { groundTruth, fullThetaPred, diagPred, Theta, totalN, neuronCounts };
+  return { groundTruth, fullPhiPred, diagPred, Phi, totalN, neuronCounts };
 }
 
 // ======================== DATA ========================
@@ -233,16 +233,16 @@ function makeSpirals(nPerClass) {
 
 // ======================== CANVAS ========================
 
-function drawHeatmap(canvas, Theta, totalN, neuronCounts) {
-  if (!canvas || !Theta) return;
+function drawHeatmap(canvas, Phi, totalN, neuronCounts) {
+  if (!canvas || !Phi) return;
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
   const corr = new Float64Array(totalN * totalN);
   for (let i = 0; i < totalN; i++)
     for (let j = 0; j < totalN; j++) {
-      const dii = Theta[i * totalN + i], djj = Theta[j * totalN + j];
-      corr[i * totalN + j] = (dii > 0 && djj > 0) ? Theta[i * totalN + j] / Math.sqrt(dii * djj) : 0;
+      const dii = Phi[i * totalN + i], djj = Phi[j * totalN + j];
+      corr[i * totalN + j] = (dii > 0 && djj > 0) ? Phi[i * totalN + j] / Math.sqrt(dii * djj) : 0;
     }
   const cW = W / totalN, cH = H / totalN;
   for (let i = 0; i < totalN; i++)
@@ -308,11 +308,11 @@ function r2fn(actual, pred) {
 // ======================== COMPONENT ========================
 
 const LCOLORS = ["#2563eb", "#0891b2", "#059669", "#d97706"];
-const MODES = ["ground", "fullTheta", "diagBP"];
+const MODES = ["ground", "fullPhi", "diagBP"];
 const MODE_LABELS = {
   ground: "Eq.2: J\u00B7\u0394W",
-  fullTheta: "Eq.3: \u0398\u00B7\u2202L",
-  diagBP: "Eq.5: \u0398\u1D62\u1D62\u00B7\u2207L",
+  fullPhi: "Eq.3: \u03A6\u00B7\u2202L",
+  diagBP: "Eq.5: \u03A6\u1D62\u1D62\u00B7\u2207L",
 };
 
 export default function App() {
@@ -324,7 +324,7 @@ export default function App() {
   const [metrics, setMetrics] = useState({});
   const [history, setHistory] = useState([]);
   const [running, setRunning] = useState(false);
-  const [scatterMode, setScatterMode] = useState("fullTheta");
+  const [scatterMode, setScatterMode] = useState("fullPhi");
 
   const netRef = useRef(null);
   const dataRef = useRef(null);
@@ -377,7 +377,7 @@ export default function App() {
     return totalLoss;
   }, [lr]);
 
-  // Expensive diagnostic step — builds full Jacobian, computes Theta, predictions
+  // Expensive diagnostic step — builds full Jacobian, computes Phi, predictions
   const expensiveStep = useCallback(() => {
     const net = netRef.current;
     const data = dataRef.current;
@@ -395,7 +395,7 @@ export default function App() {
     for (let l = 1; l <= L; l++)
       for (let i = 0; i < fwd.a[l].length; i++) aBefore.push(fwd.a[l][i]);
 
-    const { groundTruth, fullThetaPred, diagPred, Theta, totalN, neuronCounts } =
+    const { groundTruth, fullPhiPred, diagPred, Phi, totalN, neuronCounts } =
       computeAllPredictions(net, fwd, dLdW, dLdA, Y[bi], lr);
 
     // Apply this step's SGD update
@@ -418,7 +418,7 @@ export default function App() {
     }
 
     const r2G = r2fn(deltaA, Array.from(groundTruth));
-    const r2F = r2fn(deltaA, Array.from(fullThetaPred));
+    const r2F = r2fn(deltaA, Array.from(fullPhiPred));
     const r2D = r2fn(deltaA, Array.from(diagPred));
 
     stepRef.current++;
@@ -426,10 +426,10 @@ export default function App() {
     return {
       preds: {
         ground: Array.from(groundTruth),
-        fullTheta: Array.from(fullThetaPred),
+        fullPhi: Array.from(fullPhiPred),
         diagBP: Array.from(diagPred),
       },
-      actual: deltaA, neuronCounts, Theta, totalN,
+      actual: deltaA, neuronCounts, Phi, totalN,
       totalLoss, r2G, r2F, r2D,
     };
   }, [lr]);
@@ -442,9 +442,9 @@ export default function App() {
     if (doExpensive) {
       const result = expensiveStep();
       if (!result) return;
-      const { preds, actual, neuronCounts, Theta, totalN, totalLoss, r2G, r2F, r2D } = result;
+      const { preds, actual, neuronCounts, Phi, totalN, totalLoss, r2G, r2F, r2D } = result;
 
-      if (Theta) drawHeatmap(heatRef.current, Theta, totalN, neuronCounts);
+      if (Phi) drawHeatmap(heatRef.current, Phi, totalN, neuronCounts);
       lastData.current = { preds, actual, neuronCounts };
       drawScatter(scatRef.current, preds[scatterMode], actual, neuronCounts, MODE_LABELS[scatterMode]);
 
@@ -594,15 +594,15 @@ export default function App() {
                     color: scatterMode === mode ? "#fff" : "#666",
                     cursor: "pointer", fontFamily: "monospace", fontSize: 10,
                   }}>
-                  {mode === "ground" ? "Eq.2" : mode === "fullTheta" ? "Eq.3" : "Eq.5"}
+                  {mode === "ground" ? "Eq.2" : mode === "fullPhi" ? "Eq.3" : "Eq.5"}
                 </button>
               ))}
             </div>
           </div>
           <div style={{ fontSize: 11, color: "#888", marginBottom: 8, fontFamily: "monospace" }}>
             {scatterMode === "ground" && "Eq.2: J·ΔW — first-order Taylor identity (sanity check)"}
-            {scatterMode === "fullTheta" && "Eq.3: Θ·∂L — kernel with partial derivs, sum over outputs only"}
-            {scatterMode === "diagBP" && "Eq.5: Θᵢᵢ × backprop gradient — diagonal approximation"}
+            {scatterMode === "fullPhi" && "Eq.3: Φ·∂L — kernel with partial derivs, sum over outputs only"}
+            {scatterMode === "diagBP" && "Eq.5: Φᵢᵢ × backprop gradient — diagonal approximation"}
           </div>
           <div style={{ display: "flex", justifyContent: "center" }}>
             <canvas ref={scatRef} width={540} height={540}
