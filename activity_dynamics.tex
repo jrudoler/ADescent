@@ -153,7 +153,10 @@ Figure~2 sweeps width from 4 to 128 (3 random seeds per width, each trained for 
   \iffalse
   \caption{\textbf{In a wide network doing weight descent, activity changes closely match activity-space gradient descent.}  Top row: width\,=\,8.  Middle row: width\,=\,48.  Left: normalised $\Phi^{(\ell)}_{ik}$ heatmaps (white = uncorrelated, blue = correlated).  Scatter panels: predicted vs.\ actual $\Delta A$ for the full kernel (Eq.\,3), the diagonal approximation (Eq.\,5), and raw $-\partial L/\partial A$.  Dead ReLU neurons excluded.  Bottom row: $r(\Delta A,\,-\partial L/\partial A)$ and loss over training.}
   \fi
+  \iffalse
   \caption{\textbf{In a wide network doing weight descent, activity changes closely match activity-space gradient descent.}  Top row: width\,=\,8.  Middle row: width\,=\,48.  Left: normalised $\Phi^{(\ell)}_{ik}$ heatmaps (white = uncorrelated, blue = correlated).  Scatter panels: predicted vs.\ actual $\Delta A$ for the full kernel (Eq.\,3), the diagonal approximation $-\Phi_{ii}\,\partial L/\partial A_i$, and raw $-\partial L/\partial A$.  Dead ReLU neurons excluded.  Bottom row: $r(\Delta A,\;-\Phi_{ii}\,\partial L/\partial A_i)$ and loss over training.}
+  \fi
+  \caption{\textbf{In a wide network doing weight descent, activity changes closely match activity-space gradient descent.}  Top row: width\,=\,8.  Middle row: width\,=\,48.  Left: unnormalised $\Phi^{(\ell)}_{ik}$ heatmaps, each with its own horizontal colorbar (white = 0; colorbar shows raw kernel magnitude).  Scatter panels: predicted vs.\ actual $\Delta A$ for the full kernel (Eq.\,3), the diagonal approximation $-\Phi_{ii}\,\partial L/\partial A_i$, and raw $-\partial L/\partial A$.  Dead ReLU neurons excluded.  Bottom row: $r(\Delta A,\;-\Phi_{ii}\,\partial L/\partial A_i)$ and loss over training.}
 \end{figure}
 
 \begin{figure}[h!]

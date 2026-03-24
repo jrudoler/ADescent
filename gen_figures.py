@@ -525,23 +525,24 @@ def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
 LAYER_COLORS = ["#2563eb", "#0891b2", "#059669", "#d97706", "#dc2626"]
 
 
-def plot_phi_heatmap(ax, layerwise_kernel_matrix, neuron_counts, title_suffix=""):
-    total_neurons = layerwise_kernel_matrix.shape[0]
-    diagonal_norm = np.sqrt(np.diag(layerwise_kernel_matrix))
-    diagonal_norm[diagonal_norm == 0] = 1
-    correlation_matrix = layerwise_kernel_matrix / np.outer(
-        diagonal_norm, diagonal_norm
-    )
-    correlation_matrix = np.clip(correlation_matrix, -1, 1)
-
+def plot_phi_heatmap(
+    ax,
+    layerwise_kernel_matrix,
+    neuron_counts,
+    title_suffix="",
+    color_limit=None,
+):
+    if color_limit is None:
+        color_limit = np.max(np.abs(layerwise_kernel_matrix))
+    color_limit = max(color_limit, 1e-12)
     cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
         "rbu", [(1, 0.22, 0.22), (1, 1, 1), (0.22, 0.22, 1)]
     )
-    ax.imshow(
-        correlation_matrix,
+    heatmap_image = ax.imshow(
+        layerwise_kernel_matrix,
         cmap=cmap,
-        vmin=-1,
-        vmax=1,
+        vmin=-color_limit,
+        vmax=color_limit,
         interpolation="nearest",
         aspect="equal",
     )
@@ -555,10 +556,11 @@ def plot_phi_heatmap(ax, layerwise_kernel_matrix, neuron_counts, title_suffix=""
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_title(
-        r"$\Phi^{(\ell)}_{ik}$ correlation" + title_suffix,
+        r"raw $\Phi^{(\ell)}_{ik}$" + title_suffix,
         fontsize=9,
         fontweight="bold",
     )
+    return heatmap_image
 
 
 def plot_scatter(
@@ -692,15 +694,23 @@ grid_spec = GridSpec(
     bottom=0.07,
 )
 
-
 # Row 1: width=8
 heatmap_ax_width_8 = figure_one.add_subplot(grid_spec[0, 0])
-plot_phi_heatmap(
+heatmap_image_width_8 = plot_phi_heatmap(
     heatmap_ax_width_8,
     snapshot_width_8["Phi"],
     snapshot_width_8["neuron_counts"],
     " (width=8)",
 )
+phi_colorbar_width_8 = figure_one.colorbar(
+    heatmap_image_width_8,
+    ax=heatmap_ax_width_8,
+    orientation="horizontal",
+    fraction=0.08,
+    pad=0.12,
+)
+phi_colorbar_width_8.set_label(r"$\Phi^{(\ell)}_{ik}$", fontsize=6)
+phi_colorbar_width_8.ax.tick_params(labelsize=5)
 
 kernel_scatter_ax_width_8 = figure_one.add_subplot(grid_spec[0, 1])
 plot_scatter(
@@ -737,12 +747,21 @@ raw_gradient_scatter_ax_width_8.legend(
 
 # Row 2: width=48
 heatmap_ax_width_48 = figure_one.add_subplot(grid_spec[1, 0])
-plot_phi_heatmap(
+heatmap_image_width_48 = plot_phi_heatmap(
     heatmap_ax_width_48,
     snapshot_width_48["Phi"],
     snapshot_width_48["neuron_counts"],
     " (width=48)",
 )
+phi_colorbar_width_48 = figure_one.colorbar(
+    heatmap_image_width_48,
+    ax=heatmap_ax_width_48,
+    orientation="horizontal",
+    fraction=0.08,
+    pad=0.12,
+)
+phi_colorbar_width_48.set_label(r"$\Phi^{(\ell)}_{ik}$", fontsize=6)
+phi_colorbar_width_48.ax.tick_params(labelsize=5)
 
 kernel_scatter_ax_width_48 = figure_one.add_subplot(grid_spec[1, 1])
 plot_scatter(
