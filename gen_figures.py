@@ -164,8 +164,8 @@ def compute_jacobian_and_predictions(
     Returns flattened vectors over all non-input neurons:
       exact_activity_change: first-order activity change J @ ΔW from the actual SGD step
       kernel_prediction: per-layer kernel prediction from Eq. 3
-      diagonal_prediction: diagonal approximation from Eq. 5, i.e. -η Φ_ii dL/dA_i
-      raw_negative_gradient: raw -dL/dA baseline (with dead hidden ReLUs masked out)
+      diagonal_prediction: diagonal approximation from Eq. 5, i.e. -η Φ_ii dℒ/dA_i
+      raw_negative_gradient: raw -dℒ/dA baseline (with dead hidden ReLUs masked out)
       layerwise_kernel_matrix: block-diagonal matrix of per-layer kernels Φ^(ℓ)
     """
     num_layers = len(weight_matrices)
@@ -358,7 +358,7 @@ def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
       corr_exact: r(actual ΔA, JΔW)
       corr_kernel: r(actual ΔA, full kernel Eq. 3)
       corr_diagonal: r(actual ΔA, diagonal Eq. 5)
-      corr_raw_gradient: r(actual ΔA, raw -dL/dA)
+      corr_raw_gradient: r(actual ΔA, raw -dℒ/dA)
     """
     layer_sizes = [16] + [width] * depth + [2]
     weight_matrices = create_network(layer_sizes)
@@ -638,7 +638,7 @@ def plot_dynamics(ax, history, show_loss_label=True):
         "-",
         color="#d97706",
         linewidth=1.2,
-        label=r"$r(\Delta A,\;-\Phi_{ii}\,\partial L/\partial A_i)$",
+        label=r"$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A_i)$",
     )
 
     ax2 = ax.twinx()
@@ -718,7 +718,7 @@ plot_scatter(
     snapshot_width_8["kernel_prediction"],
     snapshot_width_8["actual_activity_change"],
     snapshot_width_8["neuron_counts"],
-    r"$\Phi\cdot\nabla L$",
+    r"$\Phi\cdot\nabla \mathcal{L}$",
     "Eq. 3 (kernel)",
 )
 
@@ -728,8 +728,8 @@ plot_scatter(
     snapshot_width_8["diagonal_prediction"],
     snapshot_width_8["actual_activity_change"],
     snapshot_width_8["neuron_counts"],
-    r"$-\Phi_{ii}\,\partial L/\partial A_i$",
-    r"$-\Phi_{ii}\,\partial L/\partial A_i$",
+    r"$-\Phi_{ii}\,\partial \mathcal{L}/\partial A_i$",
+    r"$-\Phi_{ii}\,\partial \mathcal{L}/\partial A_i$",
 )
 
 raw_gradient_scatter_ax_width_8 = figure_one.add_subplot(grid_spec[0, 3])
@@ -738,8 +738,8 @@ plot_scatter(
     snapshot_width_8["raw_negative_gradient"],
     snapshot_width_8["actual_activity_change"],
     snapshot_width_8["neuron_counts"],
-    r"$-\partial L/\partial A$",
-    r"$-dL/dA$ (raw)",
+    r"$-\partial \mathcal{L}/\partial A$",
+    r"$-d\mathcal{L}/dA$ (raw)",
 )
 raw_gradient_scatter_ax_width_8.legend(
     fontsize=4.5, loc="lower right", framealpha=0.8, markerscale=0.8
@@ -769,7 +769,7 @@ plot_scatter(
     snapshot_width_48["kernel_prediction"],
     snapshot_width_48["actual_activity_change"],
     snapshot_width_48["neuron_counts"],
-    r"$\Phi\cdot\nabla L$",
+    r"$\Phi\cdot\nabla \mathcal{L}$",
     "Eq. 3 (kernel)",
 )
 
@@ -779,8 +779,8 @@ plot_scatter(
     snapshot_width_48["diagonal_prediction"],
     snapshot_width_48["actual_activity_change"],
     snapshot_width_48["neuron_counts"],
-    r"$-\Phi_{ii}\,\partial L/\partial A_i$",
-    r"$-\Phi_{ii}\,\partial L/\partial A_i$",
+    r"$-\Phi_{ii}\,\partial \mathcal{L}/\partial A_i$",
+    r"$-\Phi_{ii}\,\partial \mathcal{L}/\partial A_i$",
 )
 
 raw_gradient_scatter_ax_width_48 = figure_one.add_subplot(grid_spec[1, 3])
@@ -789,8 +789,8 @@ plot_scatter(
     snapshot_width_48["raw_negative_gradient"],
     snapshot_width_48["actual_activity_change"],
     snapshot_width_48["neuron_counts"],
-    r"$-\partial L/\partial A$",
-    r"$-dL/dA$ (raw)",
+    r"$-\partial \mathcal{L}/\partial A$",
+    r"$-d\mathcal{L}/dA$ (raw)",
 )
 
 # Row 3: Training dynamics side by side
@@ -898,7 +898,7 @@ width_sweep_ax.axhline(1, color="#e8e5dd", linestyle="--", linewidth=0.5)
 width_sweep_ax.axhline(0, color="#e8e5dd", linewidth=0.5)
 width_sweep_ax.set_xlabel("hidden layer width", fontsize=8)
 width_sweep_ax.set_ylabel(
-    r"$r(\Delta A,\;-\Phi_{ii}\,\partial L/\partial A_i)$", fontsize=8
+    r"$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A_i)$", fontsize=8
 )
 width_sweep_ax.tick_params(labelsize=7)
 width_sweep_ax.legend(fontsize=7, loc="lower right", framealpha=0.8)

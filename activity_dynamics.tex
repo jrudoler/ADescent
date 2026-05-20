@@ -14,6 +14,7 @@
 \newcommand{\vW}{\mathbf{W}}
 \newcommand{\vA}{\mathbf{A}}
 \newcommand{\grad}{\nabla_{\!\vW}}
+\newcommand{\loss}{\mathcal{L}}
 
 \begin{document}
 
@@ -34,25 +35,27 @@
 A central question in neuroscience is whether biological neural networks optimise a loss function by adjusting synaptic weights---and if so, by what rule.  Decades of theoretical work have proposed candidate learning rules.  But synaptic weights cannot be measured at scale in behaving animals, so these proposals remain difficult to test directly.  Neural \emph{activities}, by contrast, can be recorded in large populations across learning.  This raises a concrete question: if the brain does perform gradient descent on its weights, what should we expect to see in the activities?  Here we show that the answer takes a surprisingly simple form---activity changes must be approximately proportional to activity-space loss gradients---and that this prediction is directly testable with existing experimental techniques.
 
 \paragraph{Setup and derivation.}
-Consider a feedforward network with layers $\ell=1,\ldots,L$, weights $\vW$, and neural activities $A_i^{(\ell)}(\vW)$, trained to minimise a loss $L$.  Gradient descent on the weights embodies a simple principle: \emph{the more that strengthening a synapse would improve performance, the more that synapse is strengthened} (and vice versa---harmful synapses are weakened).  Formally, every weight is updated simultaneously:
+Consider a feedforward network with layers $\ell=1,\ldots,L$, weights $\vW$, and neural activities $A_i^{(\ell)}(\vW)$, trained to minimise a loss $\loss$.  Gradient descent on the weights embodies a simple principle: \emph{the more that strengthening a synapse would improve performance, the more that synapse is strengthened} (and vice versa---harmful synapses are weakened).  Formally, every weight is updated simultaneously:
 %
 \begin{equation}
-  \Delta W_\alpha = -\eta\,\frac{\partial L}{\partial W_\alpha}\,,
+  \Delta W_\alpha = -\eta\,\frac{\partial \loss}{\partial W_\alpha}\,,
   \qquad \forall\;\alpha.
 \end{equation}
 %
 What is the induced change in the activity of neuron $i$ in layer~$\ell$?
-Because $A_i^{(\ell)}$ depends only on weights in layers $1$ through~$\ell$, the chain rule gives
+Because $A_i^{(\ell)}$ depends only on weights in layers $1$ through~$\ell$, a first-order Taylor expansion gives
 %
 \begin{equation}\label{eq:chain}
   \Delta A_i^{(\ell)}
-  \;=\; -\eta \sum_{\alpha\in\text{layers}\,1..\ell} \frac{\partial A_i^{(\ell)}}{\partial W_\alpha}\,\frac{\partial L}{\partial W_\alpha}\,.
+  \;\approx\; -\eta \sum_{\alpha\in\text{layers}\,1..\ell} \frac{\partial A_i^{(\ell)}}{\partial W_\alpha}\,\frac{\partial \loss}{\partial W_\alpha}\,,
 \end{equation}
 %
-In a feedforward network, the effect of any weight in layers $1..\ell$ on the loss passes entirely through the activities of layer~$\ell$, so $\partial L/\partial W_\alpha = \sum_{k\in\text{layer}\,\ell} (\partial L/\partial A_k^{(\ell)})\,(\partial A_k^{(\ell)}/\partial W_\alpha)$.  Exchanging the sums yields
+where the approximation is first-order in~$\eta$ (the remainder is $O(\eta^2)$, involving second derivatives of the activities with respect to the weights).  For piecewise-linear activations such as ReLU, the expansion is exact whenever the step is small enough that no unit's activation status changes.
+%
+In a sequential feedforward network (one without skip or residual connections), the effect of any weight in layers $1..\ell$ on the loss passes entirely through the activities of layer~$\ell$, so $\partial \loss/\partial W_\alpha = \sum_{k\in\text{layer}\,\ell} (\partial \loss/\partial A_k^{(\ell)})\,(\partial A_k^{(\ell)}/\partial W_\alpha)$.  Exchanging the sums yields
 %
 \begin{equation}\label{eq:main}
-  \boxed{\;\Delta A_i^{(\ell)} \;=\; -\eta \sum_{k\in\text{layer}\,\ell} \Phi^{(\ell)}_{ik}\;\frac{\partial L}{\partial A_k^{(\ell)}}\;,}
+  \boxed{\;\Delta A_i^{(\ell)} \;\approx\; -\eta \sum_{k\in\text{layer}\,\ell} \Phi^{(\ell)}_{ik}\;\frac{\partial \loss}{\partial A_k^{(\ell)}}\;,}
 \end{equation}
 %
 where
@@ -63,13 +66,13 @@ where
   \;=\; \grad A_i^{(\ell)} \cdot \grad A_k^{(\ell)}
 \end{equation}
 %
-is a neural-tangent-kernel-style Gram matrix defined on the activities within each layer, and $\partial L/\partial A_k^{(\ell)}$ is the full backpropagated loss gradient---a sufficient statistic that compresses everything downstream layers contribute to the weight updates affecting layer~$\ell$.  In vector form, $\Delta\vA^{(\ell)} = -\eta\,\Phi^{(\ell)}\,\nabla_{\!\vA^{(\ell)}}L$: gradient descent in weight space induces \emph{kernel descent} within each layer of activity space.  This identity is exact and holds for any differentiable feedforward network, regardless of depth, width, or activation function.
+is a neural-tangent-kernel-style Gram matrix defined on the activities within each layer, and $\partial \loss/\partial A_k^{(\ell)}$ is the full backpropagated loss gradient---a sufficient statistic that compresses everything downstream layers contribute to the weight updates affecting layer~$\ell$.  In vector form, $\Delta\vA^{(\ell)} \approx -\eta\,\Phi^{(\ell)}\,\nabla_{\!\vA^{(\ell)}}\loss$: gradient descent in weight space induces \emph{kernel descent} within each layer of activity space.  The algebraic identity relating the Jacobian-weighted gradient to the kernel form is exact; the overall expression is a first-order approximation in~$\eta$ (see Eq.\,2).  It holds for any differentiable sequential feedforward network---i.e.\ one in which each layer receives input only from the immediately preceding layer---regardless of depth, width, or activation function.  Architectures with skip or residual connections require a modified treatment because weights can influence the loss through paths that bypass intermediate layers.
 
 \paragraph{The self term drives each neuron toward its own loss gradient.}
-The diagonal element $\Phi^{(\ell)}_{ii}=\lVert\grad A_i^{(\ell)}\rVert^2$ collects contributions from \emph{all} weights that influence neuron $i$---both its own incoming weights and every weight in earlier layers that lies on a path to it.  Because $\Phi^{(\ell)}_{ii}>0$, the self term is always aligned with $-\partial L/\partial A_i^{(\ell)}$: each neuron's activity moves down its own loss gradient, with an effective learning rate $\eta\,\Phi^{(\ell)}_{ii}$ that grows with the depth and width of its input pathways.  In other words, weight-space gradient descent guarantees that every neuron has a built-in tendency to change its activity in the loss-reducing direction.
+The diagonal element $\Phi^{(\ell)}_{ii}=\lVert\grad A_i^{(\ell)}\rVert^2$ collects contributions from \emph{all} weights that influence neuron $i$---both its own incoming weights and every weight in earlier layers that lies on a path to it.  Because $\Phi^{(\ell)}_{ii}>0$, the self term is always aligned with $-\partial \loss/\partial A_i^{(\ell)}$: each neuron's activity moves down its own loss gradient, with an effective learning rate $\eta\,\Phi^{(\ell)}_{ii}$ that grows with the depth and width of its input pathways.  In other words, weight-space gradient descent guarantees that every neuron has a built-in tendency to change its activity in the loss-reducing direction.
 
 \paragraph{Cross terms introduce interference from other neurons.}
-The off-diagonal elements $\Phi^{(\ell)}_{ik}=\grad A_i^{(\ell)}\cdot\grad A_k^{(\ell)}$ for $k\neq i$ couple neuron $i$ to every other neuron's loss gradient \emph{within the same layer}.  Their magnitude reflects parameter sharing: two neurons fed by overlapping early-layer weights will have large $|\Phi^{(\ell)}_{ik}|$; neurons in disjoint pathways will have $\Phi^{(\ell)}_{ik}\approx 0$.  These cross terms have no reason to be aligned with $-\partial L/\partial A_i^{(\ell)}$ and constitute interference---the side-effect of the rest of the layer learning simultaneously.  Whether the self term or the cross terms dominate determines whether activity changes look like activity-space gradient descent or something messier.
+The off-diagonal elements $\Phi^{(\ell)}_{ik}=\grad A_i^{(\ell)}\cdot\grad A_k^{(\ell)}$ for $k\neq i$ couple neuron $i$ to every other neuron's loss gradient \emph{within the same layer}.  Their magnitude reflects parameter sharing: two neurons fed by overlapping early-layer weights will have large $|\Phi^{(\ell)}_{ik}|$; neurons in disjoint pathways will have $\Phi^{(\ell)}_{ik}\approx 0$.  These cross terms have no reason to be aligned with $-\partial \loss/\partial A_i^{(\ell)}$ and constitute interference---the side-effect of the rest of the layer learning simultaneously.  Whether the self term or the cross terms dominate determines whether activity changes look like activity-space gradient descent or something messier.
 
 \iffalse
 \paragraph{Wide networks make the kernel diagonal-dominant.}
@@ -98,14 +101,14 @@ Taken together, these considerations suggest treating diagonal dominance as a re
 Combining the kernel identity (Eq.\,3) with diagonal dominance ($\Phi^{(\ell)}_{ii}\gg\sum_{k\neq i}|\Phi^{(\ell)}_{ik}|$) yields a simple approximation:
 %
 \begin{equation}\label{eq:diag}
-  \Delta A_i^{(\ell)} \;\approx\; -\eta\,\Phi^{(\ell)}_{ii}\;\frac{\partial L}{\partial A_i^{(\ell)}}\,.
+  \Delta A_i^{(\ell)} \;\approx\; -\eta\,\Phi^{(\ell)}_{ii}\;\frac{\partial \loss}{\partial A_i^{(\ell)}}\,.
 \end{equation}
 %
 The intuitive meaning mirrors that of weight descent: just as weight descent says \emph{strengthen each synapse in proportion to how much it helps}, activity descent says \emph{increase each neuron's firing in proportion to how much that increase would help} (and decrease it when it hurts).
 \iffalse
 Equation~5 shows that one implies the other in wide networks---the per-neuron scaling $\Phi^{(\ell)}_{ii}$ may differ across neurons, but every neuron's activity moves in the direction that locally reduces the loss.  This is the paper's central result: \emph{if a network performs gradient descent on its weights, and the network is wide enough, then its activity changes must approximately follow gradient descent in activity space.}  The approximation improves with width and, as our simulations show (Figs.\,1--2), is already accurate at moderate widths.
 \fi
-Equation~5 therefore identifies a useful approximation regime: when $\Phi^{(\ell)}$ is sufficiently diagonal-dominant, each neuron's activity moves in the direction that locally reduces the loss, up to a neuron-specific scaling factor $\Phi^{(\ell)}_{ii}$.  The exact identity is always Eq.\,3; Eq.\,5 is an empirical approximation whose quality depends on the network and training regime.
+Equation~5 therefore identifies a useful approximation regime: when $\Phi^{(\ell)}$ is sufficiently diagonal-dominant, each neuron's activity moves in the direction that locally reduces the loss, up to a neuron-specific scaling factor $\Phi^{(\ell)}_{ii}$.  The first-order kernel relation is always Eq.\,3; Eq.\,5 is a further empirical approximation whose quality depends on the network and training regime.
 
 \paragraph{Recursive structure.}
 The per-layer kernel inherits a recursion from the feedforward computation.  Writing $J_\ell = \partial\vA^{(\ell)}/\partial\vA^{(\ell-1)}$ for the inter-layer Jacobian and $D_\ell = \mathrm{diag}([\sigma'(z_i^{(\ell)})]^2\,\lVert\vA^{(\ell-1)}\rVert^2)$ for the diagonal kernel from layer~$\ell$'s own incoming weights:
@@ -127,14 +130,14 @@ This result converts an untestable claim about synaptic learning rules into a te
 \iffalse
 If a biological circuit performs \emph{any} form of gradient descent on its synaptic weights---even an approximate or noisy variant---and is sufficiently wide that $\Phi^{(\ell)}$ is diagonal-dominant, then the observable activity changes must satisfy Eq.\,5.
 \fi
-If a biological circuit performs \emph{any} form of gradient descent on its synaptic weights---even an approximate or noisy variant---and operates in a regime where $\Phi^{(\ell)}$ is approximately diagonal-dominant, then the observable activity changes must satisfy Eq.\,5.  The per-neuron scaling $\Phi^{(\ell)}_{ii}$ is unknown and may vary across neurons, but the \emph{direction} of $\Delta\vA^{(\ell)}$ is pinned: it must be approximately proportional to $-\nabla_{\!\vA^{(\ell)}}L$.  A concrete experimental protocol follows: record neural population activity across learning trials, estimate $\partial L/\partial A_i^{(\ell)}$ from a task-fitted model, and check whether the measured $\Delta A_i^{(\ell)}$ is proportional to the predicted gradient.  Only the direction matters, not the magnitude---the unknown $\Phi^{(\ell)}_{ii}$ absorbs all per-neuron scaling.  A failure of proportionality would rule out not just backpropagation but \emph{any} weight-space gradient rule in a regime where diagonal dominance is expected to hold.
+If a biological circuit performs \emph{any} form of gradient descent on its synaptic weights---even an approximate or noisy variant---and operates in a regime where $\Phi^{(\ell)}$ is approximately diagonal-dominant, then the observable activity changes must satisfy Eq.\,5.  The per-neuron scaling $\Phi^{(\ell)}_{ii}$ is unknown and may vary across neurons, but the \emph{sign} of each neuron's activity change is pinned: because $\Phi^{(\ell)}_{ii}>0$, every neuron must move in the direction that locally reduces the loss, i.e.\ $\operatorname{sign}(\Delta A_i^{(\ell)}) \approx \operatorname{sign}(-\partial \loss/\partial A_i^{(\ell)})$.  Note that if $\Phi^{(\ell)}_{ii}$ varies substantially across neurons, the population vector $\Delta\vA^{(\ell)}$ will not be parallel to $-\nabla_{\!\vA^{(\ell)}}\loss$ but rather to $-\mathrm{diag}(\Phi^{(\ell)}_{ii})\,\nabla_{\!\vA^{(\ell)}}\loss$; the two directions coincide only when $\Phi^{(\ell)}_{ii}$ is approximately uniform.  A concrete experimental protocol follows: record neural population activity across learning trials, estimate $\partial \loss/\partial A_i^{(\ell)}$ from a task-fitted model, and check whether the measured $\Delta A_i^{(\ell)}$ covaries positively with $-\partial \loss/\partial A_i^{(\ell)}$ across neurons.  The unknown $\Phi^{(\ell)}_{ii}$ absorbs per-neuron scaling, so the test checks the sign pattern and rank-order correlation, not the exact magnitudes.  A failure of this sign alignment would rule out not just backpropagation but \emph{any} weight-space gradient rule in a regime where diagonal dominance is expected to hold.  However, the test requires estimating $\partial\loss/\partial A_i^{(\ell)}$, which depends on the downstream computation from layer~$\ell$ to the output; in practice this must come from a fitted model.  A negative result is therefore ambiguous: it could indicate that the brain does not perform gradient descent, or that the downstream model used to estimate the loss gradient is wrong.  The test is most informative when the downstream model can be independently validated.
 
 \paragraph{Caveat: activity descent is necessary but not sufficient for weight descent.}
 The converse is weaker: observing that activities follow their loss gradient constrains the projection of $\Delta\vW$ onto the row space of the Jacobian $\partial A_i^{(\ell)}/\partial W_\alpha$, but says nothing about the (typically vast) null space of weight changes that leave activities unchanged on the current input.  Activity-level gradient descent is therefore consistent with many different weight-level learning rules, of which backpropagation is the minimum-norm solution.
 \iffalse
 In short, weight descent implies activity descent (in wide networks), but activity descent does not uniquely identify the weight-level rule.
 \fi
-In short, weight descent always implies the kernel relation in Eq.\,3, and implies the simpler activity-descent form in Eq.\,5 only when $\Phi^{(\ell)}$ is close to diagonal; activity descent itself does not uniquely identify the weight-level rule.  This asymmetry is a feature, not a bug: it means the test can \emph{falsify} gradient-based learning, even though it cannot confirm a specific synaptic rule.
+In short, weight descent implies the first-order kernel relation in Eq.\,3, and implies the simpler activity-descent form in Eq.\,5 only when $\Phi^{(\ell)}$ is close to diagonal; activity descent itself does not uniquely identify the weight-level rule.  This asymmetry is a feature, not a bug: it means the test can \emph{falsify} gradient-based learning, even though it cannot confirm a specific synaptic rule.
 
 \paragraph{Methods.}
 Figures~1--2 numerically verify Eqs.\,2--5 in a 3-hidden-layer ReLU MLP trained with online SGD ($\eta=0.005$) on a 2-class image dataset (4$\times$4 pixel images of horizontal vs.\ vertical bars, 20 per class, input dimension 16, output dimension 2).  Dead ReLU neurons (pre-activation $\leq 0$ on the sampled input) are excluded from all analyses.  At regular intervals during training, we compute the full activity Jacobian $\partial A_i^{(\ell)}/\partial W_\alpha$ and the per-layer kernel $\Phi^{(\ell)}_{ik}$, then compare the predicted activity change $\Delta A$ from the chain-rule identity (Eq.\,2), the kernel equation (Eq.\,3), and the diagonal approximation (Eq.\,5) against the actual change measured after a single gradient step.  Figure~1 shows detailed diagnostics at widths 8 and 48.
@@ -156,7 +159,7 @@ Figure~2 sweeps width from 4 to 128 (3 random seeds per width, each trained for 
   \iffalse
   \caption{\textbf{In a wide network doing weight descent, activity changes closely match activity-space gradient descent.}  Top row: width\,=\,8.  Middle row: width\,=\,48.  Left: normalised $\Phi^{(\ell)}_{ik}$ heatmaps (white = uncorrelated, blue = correlated).  Scatter panels: predicted vs.\ actual $\Delta A$ for the full kernel (Eq.\,3), the diagonal approximation $-\Phi_{ii}\,\partial L/\partial A_i$, and raw $-\partial L/\partial A$.  Dead ReLU neurons excluded.  Bottom row: $r(\Delta A,\;-\Phi_{ii}\,\partial L/\partial A_i)$ and loss over training.}
   \fi
-  \caption{\textbf{In a wide network doing weight descent, activity changes closely match activity-space gradient descent.}  Top row: width\,=\,8.  Middle row: width\,=\,48.  Left: unnormalised $\Phi^{(\ell)}_{ik}$ heatmaps, each with its own horizontal colorbar (white = 0; colorbar shows raw kernel magnitude).  Scatter panels: predicted vs.\ actual $\Delta A$ for the full kernel (Eq.\,3), the diagonal approximation $-\Phi_{ii}\,\partial L/\partial A_i$, and raw $-\partial L/\partial A$.  Dead ReLU neurons excluded.  Bottom row: $r(\Delta A,\;-\Phi_{ii}\,\partial L/\partial A_i)$ and loss over training.}
+  \caption{\textbf{In a wide network doing weight descent, activity changes closely match activity-space gradient descent.}  Top row: width\,=\,8.  Middle row: width\,=\,48.  Left: unnormalised $\Phi^{(\ell)}_{ik}$ heatmaps, each with its own horizontal colorbar (white = 0; colorbar shows raw kernel magnitude).  Scatter panels: predicted vs.\ actual $\Delta A$ for the full kernel (Eq.\,3), the diagonal approximation $-\Phi_{ii}\,\partial \loss/\partial A_i$, and raw $-\partial \loss/\partial A$.  Dead ReLU neurons excluded.  Bottom row: $r(\Delta A,\;-\Phi_{ii}\,\partial \loss/\partial A_i)$ and loss over training.}
 \end{figure}
 
 \begin{figure}[h!]
@@ -168,7 +171,7 @@ Figure~2 sweeps width from 4 to 128 (3 random seeds per width, each trained for 
   \iffalse
   \caption{\textbf{Activity changes remain strongly aligned with the activity-space loss gradient across widths in this toy setting.}  Pearson $r$ between actual $\Delta A$ and $-\partial L/\partial A$ as a function of hidden-layer width.  Dead ReLU neurons excluded.  Shaded regions: $\pm1$ s.d.\ across seeds.}
   \fi
-  \caption{\textbf{The diagonal approximation improves with width in this toy setting.}  Pearson $r$ between actual $\Delta A$ and $-\Phi_{ii}\,\partial L/\partial A_i$ as a function of hidden-layer width.  Dead ReLU neurons excluded.  Shaded regions: $\pm1$ s.d.\ across seeds.}
+  \caption{\textbf{The diagonal approximation improves with width in this toy setting.}  Pearson $r$ between actual $\Delta A$ and $-\Phi_{ii}\,\partial \loss/\partial A_i$ as a function of hidden-layer width.  Dead ReLU neurons excluded.  Shaded regions: $\pm1$ s.d.\ across seeds.}
 \end{figure}
 
 \newpage
@@ -227,11 +230,11 @@ To make the diagonal/off-diagonal split concrete, consider a standard layer-2 bl
   \qquad
   A_i^{(2)} = \sigma_2\!\bigl(z_i^{(2)}\bigr).
 \]
-The exact activity update is
+The first-order activity update is
 \[
   \Delta A_i^{(2)}
-  =
-  -\eta \sum_j \Phi_{ij}^{(2)} \frac{\partial L}{\partial A_j^{(2)}}.
+  \approx
+  -\eta \sum_j \Phi_{ij}^{(2)} \frac{\partial \loss}{\partial A_j^{(2)}}.
 \]
 The point of this appendix is to show explicitly where the self term $\Phi_{ii}^{(2)}$ and the cross terms $\Phi_{ij}^{(2)}$ for $j\neq i$ come from.
 
@@ -305,13 +308,13 @@ so
 \]
 
 \paragraph{Self and cross terms in the activity update.}
-Substituting the layer-2 kernel into the exact update and separating the $j=i$ and $j\neq i$ pieces gives
+Substituting the layer-2 kernel into the first-order update and separating the $j=i$ and $j\neq i$ pieces gives
 \[
   \Delta A_i^{(2)}
-  =
-  -\eta \,\Phi_{ii}^{(2)}\,\frac{\partial L}{\partial A_i^{(2)}}
+  \approx
+  -\eta \,\Phi_{ii}^{(2)}\,\frac{\partial \loss}{\partial A_i^{(2)}}
   -
-  \eta \sum_{j\neq i} \Phi_{ij}^{(2)}\,\frac{\partial L}{\partial A_j^{(2)}}.
+  \eta \sum_{j\neq i} \Phi_{ij}^{(2)}\,\frac{\partial \loss}{\partial A_j^{(2)}}.
 \]
 Using the expression above,
 \[
@@ -330,14 +333,14 @@ while for $j\neq i$,
 Hence
 \[
   \Delta A_i^{(2)}
-  =
-  -\eta \Bigl(D_{2,ii} + \sum_m J_{2,im}^2 D_{1,mm}\Bigr) \frac{\partial L}{\partial A_i^{(2)}}
+  \approx
+  -\eta \Bigl(D_{2,ii} + \sum_m J_{2,im}^2 D_{1,mm}\Bigr) \frac{\partial \loss}{\partial A_i^{(2)}}
   -
   \eta \sum_{j\neq i}
   \Bigl(\sum_m J_{2,im} D_{1,mm} J_{2,jm}\Bigr)
-  \frac{\partial L}{\partial A_j^{(2)}}.
+  \frac{\partial \loss}{\partial A_j^{(2)}}.
 \]
-The first bracket is the self term: it is always aligned with $-\partial L/\partial A_i^{(2)}$.  The second sum is the interference term: it mixes neuron $i$ with the gradients of other neurons in the same layer through shared earlier-layer parameters.
+The first bracket is the self term: it is always aligned with $-\partial \loss/\partial A_i^{(2)}$.  The second sum is the interference term: it mixes neuron $i$ with the gradients of other neurons in the same layer through shared earlier-layer parameters.
 
 \paragraph{Relation to the temporary $x_0/x_1$ notation.}
 If one writes $x_0 = \vA^{(0)}$ and $x_1 = \vA^{(1)}$, then
@@ -357,9 +360,9 @@ For an arbitrary depth-$L$ feedforward network with pointwise nonlinearities,
   A_i^{(\ell)} = \sigma_\ell\!\bigl(z_i^{(\ell)}\bigr),
   \qquad \ell = 1,\dots,L,
 \]
-again omitting biases for simplicity.  The exact kernel identity from the main text still holds:
+again omitting biases for simplicity.  The first-order kernel relation from the main text still holds:
 \[
-  \Delta \vA^{(\ell)} = -\eta\,\Phi^{(\ell)}\,\nabla_{\!\vA^{(\ell)}} L,
+  \Delta \vA^{(\ell)} \approx -\eta\,\Phi^{(\ell)}\,\nabla_{\!\vA^{(\ell)}} \loss,
   \qquad
   \Phi_{ij}^{(\ell)} = \sum_\alpha
   \frac{\partial A_i^{(\ell)}}{\partial W_\alpha}
@@ -428,15 +431,15 @@ Repeated substitution shows that every earlier layer contributes a positive-semi
 This makes the structure transparent: $D_r$ captures the direct effect of layer-$r$ weights on layer-$r$ activities, and the surrounding Jacobians propagate that contribution forward to layer~$\ell$.
 
 \paragraph{Role of nonlinearities.}
-Nothing in the exact identity requires linear hidden units.  For smooth nonlinearities such as sigmoid, tanh, or GELU, the derivation above is exact with the corresponding $\sigma_\ell'$.  For piecewise-linear nonlinearities such as ReLU or leaky ReLU, the same formulas hold almost everywhere; at kink points one may use a subgradient.  In particular, if a ReLU unit is inactive on the sampled input, then $\sigma_\ell'\!\bigl(z_i^{(\ell)}\bigr)=0$, so its row of $J_\ell$ and its diagonal entry in $D_\ell$ vanish.  This is the appendix-level version of why dead ReLU units contribute nothing to the kernel on that input.
+Nothing in the kernel definition or recursion requires linear hidden units.  For smooth nonlinearities such as sigmoid, tanh, or GELU, the algebraic derivation above holds with the corresponding $\sigma_\ell'$; the overall $\Delta\vA\approx-\eta\Phi\nabla_{\!\vA}\loss$ remains a first-order approximation in~$\eta$.  For piecewise-linear nonlinearities such as ReLU or leaky ReLU, the same formulas hold almost everywhere; at kink points one may use a subgradient.  In particular, if a ReLU unit is inactive on the sampled input, then $\sigma_\ell'\!\bigl(z_i^{(\ell)}\bigr)=0$, so its row of $J_\ell$ and its diagonal entry in $D_\ell$ vanish.  This is the appendix-level version of why dead ReLU units contribute nothing to the kernel on that input.
 
 \paragraph{More general feedforward modules.}
-The recursion above assumes an affine layer followed by a pointwise nonlinearity.  The exact kernel identity
+The recursion above assumes an affine layer followed by a pointwise nonlinearity.  The kernel definition
 \[
   \Phi_{ij}^{(\ell)} = \sum_\alpha
   \frac{\partial A_i^{(\ell)}}{\partial W_\alpha}
   \frac{\partial A_j^{(\ell)}}{\partial W_\alpha}
 \]
-still holds for any differentiable feedforward architecture.  For other modules the same logic applies: there is an own-module contribution from parameters in layer~$\ell$ and a propagated earlier-layer contribution obtained by sandwiching $\Phi^{(\ell-1)}$ between the appropriate Jacobians.  Only the explicit forms of $D_\ell$ and $J_\ell$ change.
+and the first-order relation $\Delta\vA^{(\ell)}\approx-\eta\,\Phi^{(\ell)}\nabla_{\!\vA^{(\ell)}}\loss$ still hold for any differentiable sequential feedforward architecture (i.e.\ one without skip connections).  For other modules the same logic applies: there is an own-module contribution from parameters in layer~$\ell$ and a propagated earlier-layer contribution obtained by sandwiching $\Phi^{(\ell-1)}$ between the appropriate Jacobians.  Only the explicit forms of $D_\ell$ and $J_\ell$ change.
 
 \end{document}

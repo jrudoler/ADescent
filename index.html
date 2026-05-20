@@ -252,7 +252,7 @@ function computeAllPredictions(net, fwd, dLdW, dLdA, target, eta) {
   const negGradA = new Float64Array(totalN);
   for (let i = 0; i < totalN; i++) negGradA[i] = -gradA_bp[i] * active[i];
 
-  // Layer-local kernel prediction: ΔA^(ℓ) = -η D_ℓ ∇L + J_ℓ ΔA^(ℓ-1)
+  // Layer-local kernel prediction: ΔA^(ℓ) = -η D_ℓ ∇ℒ + J_ℓ ΔA^(ℓ-1)
   const layerLocalPred = computeLayerLocalPred(net, fwd, dLdA, eta);
 
   return { groundTruth, diagPred, negGradA, layerLocalPred, Phi, totalN, neuronCounts, active };
@@ -281,7 +281,7 @@ function computeLayerLocalPred(net, fwd, dLdA, eta) {
     }
     const gradA = dLdA[l + 1];
     const deltaA = new Float64Array(nout);
-    // Own-layer: -eta [sigma'(z)]^2 ||a_aug||^2 dL/dA
+    // Own-layer: -eta [sigma'(z)]^2 ||a_aug||^2 dℒ/dA
     for (let i = 0; i < nout; i++) deltaA[i] = -eta * fp[i] * fp[i] * normSq * gradA[i];
     // Propagated: sigma'(z_i) * sum_j W_ij * deltaA_j^(l-1)  (weight cols only, no bias)
     if (prevDeltaA) {
@@ -424,9 +424,9 @@ function corrfn(actual, pred) {
 const LCOLORS = ["#2563eb", "#0891b2", "#059669", "#d97706"];
 const MODES = ["kernel", "diagBP", "negGradA"];
 const MODE_LABELS = {
-  kernel: "Eq. 3: \u03A6\u00B7\u2207L",
-  diagBP: "Eq. 5: \u2212\u03A6\u1D62\u1D62\u00B7\u2202L/\u2202A",
-  negGradA: "\u2212\u2202L/\u2202A (raw)",
+  kernel: "Eq. 3: \u03A6\u00B7\u2207\u2112",
+  diagBP: "Eq. 5: \u2212\u03A6\u1D62\u1D62\u00B7\u2202\u2112/\u2202A",
+  negGradA: "\u2212\u2202\u2112/\u2202A (raw)",
 };
 
 function App() {
@@ -740,8 +740,8 @@ function App() {
           </div>
           <div style={{ fontSize: 11, color: "#888", marginBottom: 8, fontFamily: "monospace" }}>
             {scatterMode === "kernel" && "Eq. 3: exact per-layer kernel prediction using the full backpropagated activity gradient"}
-            {scatterMode === "diagBP" && "Eq. 5: diagonal approximation \u2212\u03A6\u1D62\u1D62 \u00B7 \u2202L/\u2202A\u1D62 for active neurons only"}
-            {scatterMode === "negGradA" && "Raw \u2212\u2202L/\u2202A baseline: direction only, ignoring neuron-specific \u03A6\u1D62\u1D62 scaling"}
+            {scatterMode === "diagBP" && "Eq. 5: diagonal approximation \u2212\u03A6\u1D62\u1D62 \u00B7 \u2202\u2112/\u2202A\u1D62 for active neurons only"}
+            {scatterMode === "negGradA" && "Raw \u2212\u2202\u2112/\u2202A baseline: direction only, ignoring neuron-specific \u03A6\u1D62\u1D62 scaling"}
           </div>
           <div style={{ display: "flex", justifyContent: "center" }}>
             <canvas ref={scatRef} width={540} height={540}
