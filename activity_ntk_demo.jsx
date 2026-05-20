@@ -537,8 +537,8 @@ export default function App() {
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
             depth
-            <input type="range" min={2} max={5} step={1} value={depth}
-              onChange={e => { setRunning(false); setDepth(+e.target.value); }} style={{ width: 50 }} />
+            <input type="range" min={2} max={8} step={1} value={depth}
+              onChange={e => { setRunning(false); setDepth(+e.target.value); }} style={{ width: 70 }} />
             <b>{depth}</b>
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 4 }}>

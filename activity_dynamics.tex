@@ -124,4 +124,52 @@ Figures~1--2 numerically verify Eqs.\,2--5 in a 3-hidden-layer ReLU MLP trained 
 \caption{\textbf{The wider the network, the more faithfully activity changes track the activity-space loss gradient.}  Pearson $r$ between actual $\Delta A$ and $-\partial L/\partial A$ as a function of hidden-layer width.  Dead ReLU neurons excluded.  Shaded regions: $\pm1$ s.d.\ across seeds.}
 \end{figure}
 
+\newpage
+\appendix
+
+\section*{Appendix A. He initialisation, depth, and the $\sqrt{3}/2$ baseline}
+
+This appendix asks how the correlation $r(\Delta\vA,\,-\nabla_{\!\vA}L)$ depends on depth $D$ under He (Kaiming) initialisation, $W^{(\ell)}_{ij}\sim\mathcal{N}(0,\,2/n_{\ell-1})$ (\texttt{gen\_figures.py}, line~20).  A leading-order calculation predicts an explicit number; empirically the prediction is matched at small depth but breaks down as $D$ grows.  Both pieces of information are useful.
+
+\paragraph{Three variance-preservation properties of He init.}
+For a ReLU MLP at initialisation, in the wide-Gaussian limit:
+\begin{enumerate}
+\setlength\itemsep{0pt}
+  \item[(i)] \emph{Forward signal preserved}: $\mathbb{E}\lVert\vA^{(\ell)}\rVert^2/n_\ell$ is independent of $\ell$ (design property of He init for ReLU).
+  \item[(ii)] \emph{Backward signal preserved}: $\mathbb{E}\lVert\partial L/\partial\vA^{(\ell)}\rVert^2/n_\ell$ is also independent of $\ell$, by the dual He calculation.
+  \item[(iii)] \emph{Per-layer Jacobian norms preserved}: $\mathbb{E}\lVert J^{(\ell\leftarrow m)}_{i,:}\rVert^2 = O(1)$, independent of $\ell-m$.
+\end{enumerate}
+
+\paragraph{A leading-order calculation predicts $\sqrt{3}/2$.}
+Decompose
+\begin{equation}\label{eq:phi-ii-sum}
+  \Phi^{(\ell)}_{ii}\;=\;\sum_{m=1}^{\ell}\bigl(\sigma'_i\bigr)^2\,\lVert J^{(\ell\leftarrow m+1)}_{i,:}\rVert^2\,\lVert\vA^{(m-1)}\rVert^2.
+\end{equation}
+By (i) and (iii) each summand has the same distribution, with mean of order $n$, so to leading order $\Phi^{(\ell)}_{ii}\approx\ell\cdot\kappa\cdot n$ for a He-determined constant $\kappa$.  Treating $\sigma'_i$, $g_i\coloneqq\partial L/\partial A^{(\ell)}_i$, and the realisation of $\lVert J\rVert^2$ as i.i.d.\ across $(\ell,i)$, and $\ell$ as approximately uniform on $\{1,\dots,D\}$:
+\begin{equation}\label{eq:r-derivation}
+  r\bigl(\Delta\vA,\,-\nabla_{\!\vA}L\bigr)
+  \;\approx\;\frac{\mathbb{E}[\ell]}{\sqrt{\mathbb{E}[\ell^2]}}
+  \;\xrightarrow{D\to\infty}\;\frac{\sqrt{3}}{2}\;\approx\;0.866.
+\end{equation}
+The $D$'s cancel: the limiting value is set by the \emph{shape} of $\Phi^{(\ell)}_{ii}\propto\ell$, which itself is forced by He's variance-preservation property.
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.95\textwidth]{fig_depth_sweep.pdf}
+\caption{\textbf{Depth sweep at fixed width ($n=32$, 3 seeds).}  Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against network depth.  Orange: raw gradient $-\partial L/\partial A$.  Green: gradient scaled by $\Phi^{(\ell)}_{ii}$.  Left panel averages the first 3 diagnostics (initialisation regime); right panel averages the last 5 diagnostics (after 1500 SGD steps).  Dotted line marks the leading-order prediction $\sqrt{3}/2$ from Eq.\,\ref{eq:r-derivation}.}\label{fig:depth-sweep}
+\end{figure}
+
+\paragraph{Where the prediction holds and where it breaks.}
+Fig.\,\ref{fig:depth-sweep} sweeps depth from 2 to 8 at fixed width $n=32$ and reports the raw and scaled correlations both at initialisation and after training.  Three things are visible:
+\begin{enumerate}
+\setlength\itemsep{0pt}
+  \item \emph{The $\sqrt{3}/2$ baseline lands.}  At depth 2 the raw correlation is $\approx 0.86$, essentially the predicted value $\sqrt{3}/2\approx 0.866$.  The shape of the calculation is right.
+  \item \emph{Init and trained behave nearly identically.}  The left and right panels are within noise of each other, so the depth-dependence is a property of the initialisation regime itself, not a consequence of training.
+  \item \emph{Both correlations decrease with depth.}  At $D=8$, raw $r$ drops to $\approx 0.63$ and scaled $r$ to $\approx 0.73$.  The leading-order calculation predicts flatness for the raw correlation and an approach to $1$ for the scaled correlation; the data contradict both.
+\end{enumerate}
+The decrease has two probable sources, both invisible to the leading-order argument.  First, the calculation treats $\Phi^{(\ell)}_{ii}$ as deterministically equal to $\ell\kappa n$ within a layer; at finite width $n=32$ the within-layer scatter of $\Phi^{(\ell)}_{ii}$ is non-negligible, contributing noise that compounds across $D$ pooled layers.  Second, the layer-wise gradients $\partial L/\partial\vA^{(\ell)}$ are not i.i.d.\ across $\ell$: backprop produces them as $\bigl(J^{(L\leftarrow\ell+1)}\bigr)^{\!\top}\!(\vA^{(L)}-\vy)$, so they share the output error and inherit cross-layer correlation that grows with depth.  Both effects are $O(1/n)$ per layer and accumulate over $D$ layers.
+
+\paragraph{Implication.}
+The appropriate reading is that $\sqrt{3}/2$ is a wide-network, shallow-depth approximation set by the variance-preservation property of He init.  At width $n=32$ it is accurate for $D\le 3$; for larger $D$ the correlation falls because the i.i.d.\ assumptions in Eq.\,\ref{eq:r-derivation} fail.  The interactive demo allows the reader to verify both panels of Fig.\,\ref{fig:depth-sweep} live.
+
 \end{document}

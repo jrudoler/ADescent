@@ -466,3 +466,77 @@ ax.set_xlim(0, widths[-1] + 4)
 plt.savefig('/Users/konrad_1/AvsWdescent/fig_width_sweep.pdf', bbox_inches='tight', facecolor='#faf9f6')
 plt.savefig('/Users/konrad_1/AvsWdescent/fig_width_sweep.png', bbox_inches='tight', facecolor='#faf9f6')
 print("Figure 2 (width sweep) saved.")
+
+# ======================== DEPTH SWEEP ========================
+# Tests the appendix prediction: under He init, r(ΔA, -∂L/∂A) is approximately
+# depth-independent (~√3/2), while r(ΔA, -Φ_ii ∂L/∂A) approaches 1 with depth.
+
+depths = [2, 3, 4, 5, 6, 7, 8]
+depth_width = 32
+n_seeds_d = 3
+n_steps_depth = 1500
+diag_every_depth = 40
+
+depth_neg_init = {d: [] for d in depths}
+depth_diag_init = {d: [] for d in depths}
+depth_neg_late = {d: [] for d in depths}
+depth_diag_late = {d: [] for d in depths}
+
+for d in depths:
+    print(f"  Depth sweep: d={d} ...", flush=True)
+    for seed in range(n_seeds_d):
+        np.random.seed(5000 + seed * 100 + d)
+        h, _, _ = run_experiment(width=depth_width, depth=d, eta=0.005,
+                                 n_steps=n_steps_depth, diag_every=diag_every_depth)
+        neg_vals = h['corr_neg']
+        diag_vals = h['corr_diag']
+        # Init/early-training values (first 3 diagnostics) test the analytical prediction
+        depth_neg_init[d].append(np.mean(neg_vals[:3]))
+        depth_diag_init[d].append(np.mean(diag_vals[:3]))
+        # Late training values
+        depth_neg_late[d].append(np.mean(neg_vals[-5:]))
+        depth_diag_late[d].append(np.mean(diag_vals[-5:]))
+
+d_arr = np.array(depths)
+neg_init_mean = np.array([np.mean(depth_neg_init[d]) for d in depths])
+neg_init_std = np.array([np.std(depth_neg_init[d]) for d in depths])
+diag_init_mean = np.array([np.mean(depth_diag_init[d]) for d in depths])
+diag_init_std = np.array([np.std(depth_diag_init[d]) for d in depths])
+neg_late_mean = np.array([np.mean(depth_neg_late[d]) for d in depths])
+neg_late_std = np.array([np.std(depth_neg_late[d]) for d in depths])
+diag_late_mean = np.array([np.mean(depth_diag_late[d]) for d in depths])
+diag_late_std = np.array([np.std(depth_diag_late[d]) for d in depths])
+
+fig3, axes = plt.subplots(1, 2, figsize=(7.2, 2.8), dpi=200, sharey=True)
+fig3.patch.set_facecolor('#faf9f6')
+
+def plot_depth_panel(ax, neg_mean, neg_std, diag_mean, diag_std, title):
+    ax.fill_between(d_arr, neg_mean - neg_std, neg_mean + neg_std,
+                    color='#d97706', alpha=0.15)
+    ax.plot(d_arr, neg_mean, 'o-', color='#d97706', linewidth=1.5, markersize=4,
+            label=r'$r(\Delta A,\;-\partial L/\partial A)$ (raw)')
+    ax.fill_between(d_arr, diag_mean - diag_std, diag_mean + diag_std,
+                    color='#059669', alpha=0.15)
+    ax.plot(d_arr, diag_mean, 's-', color='#059669', linewidth=1.5, markersize=4,
+            label=r'$r(\Delta A,\;-\Phi_{ii}\,\partial L/\partial A)$ (scaled)')
+    ax.axhline(np.sqrt(3)/2, color='#b0a890', linestyle=':', linewidth=1.0)
+    ax.text(d_arr[-1] - 0.1, np.sqrt(3)/2 + 0.015, r'$\sqrt{3}/2$',
+            fontsize=7, color='#8a7d4a', ha='right')
+    ax.axhline(1, color='#e8e5dd', linestyle='--', linewidth=0.5)
+    ax.axhline(0, color='#e8e5dd', linewidth=0.5)
+    ax.set_xlabel('depth (number of hidden layers)', fontsize=8)
+    ax.tick_params(labelsize=7)
+    ax.set_ylim(0, 1.1)
+    ax.set_xlim(depths[0] - 0.3, depths[-1] + 0.3)
+    ax.set_title(title, fontsize=9, fontweight='bold')
+
+plot_depth_panel(axes[0], neg_init_mean, neg_init_std, diag_init_mean, diag_init_std,
+                 'At initialisation (theory regime)')
+plot_depth_panel(axes[1], neg_late_mean, neg_late_std, diag_late_mean, diag_late_std,
+                 'After training (1500 SGD steps)')
+axes[0].set_ylabel('Pearson $r$', fontsize=8)
+axes[1].legend(fontsize=6.5, loc='lower right', framealpha=0.8)
+
+plt.savefig('/Users/konrad_1/AvsWdescent/fig_depth_sweep.pdf', bbox_inches='tight', facecolor='#faf9f6')
+plt.savefig('/Users/konrad_1/AvsWdescent/fig_depth_sweep.png', bbox_inches='tight', facecolor='#faf9f6')
+print("Figure 3 (depth sweep) saved.")
