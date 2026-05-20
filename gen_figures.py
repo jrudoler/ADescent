@@ -911,8 +911,8 @@ plt.savefig("fig_width_sweep.png", bbox_inches="tight", facecolor="#faf9f6")
 print("Figure 2 (width sweep) saved.")
 
 # ======================== DEPTH SWEEP ========================
-# Tests the appendix prediction: under He init, r(ΔA, -∂L/∂A) is approximately
-# depth-independent (~√3/2), while r(ΔA, -Φ_ii ∂L/∂A) approaches 1 with depth.
+# Tests the appendix prediction: under He init, r(ΔA, -∂ℒ/∂A) is approximately
+# depth-independent (~√3/2), while r(ΔA, -Φ_ii ∂ℒ/∂A) approaches 1 with depth.
 
 depths = [2, 3, 4, 5, 6, 7, 8]
 depth_width = 32
@@ -957,11 +957,11 @@ def plot_depth_panel(ax, neg_mean, neg_std, diag_mean, diag_std, title):
     ax.fill_between(d_arr, neg_mean - neg_std, neg_mean + neg_std,
                     color='#d97706', alpha=0.15)
     ax.plot(d_arr, neg_mean, 'o-', color='#d97706', linewidth=1.5, markersize=4,
-            label=r'$r(\Delta A,\;-\partial L/\partial A)$ (raw)')
+            label=r'$r(\Delta A,\;-\partial \mathcal{L}/\partial A)$ (raw)')
     ax.fill_between(d_arr, diag_mean - diag_std, diag_mean + diag_std,
                     color='#059669', alpha=0.15)
     ax.plot(d_arr, diag_mean, 's-', color='#059669', linewidth=1.5, markersize=4,
-            label=r'$r(\Delta A,\;-\Phi_{ii}\,\partial L/\partial A)$ (scaled)')
+            label=r'$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A)$ (scaled)')
     ax.axhline(np.sqrt(3)/2, color='#b0a890', linestyle=':', linewidth=1.0)
     ax.text(d_arr[-1] - 0.1, np.sqrt(3)/2 + 0.015, r'$\sqrt{3}/2$',
             fontsize=7, color='#8a7d4a', ha='right')
