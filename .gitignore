@@ -3,6 +3,8 @@ __pycache__/
 .snakemake/
 
 *.aux
+*.bbl
+*.blg
 *.fdb_latexmk
 *.fls
 *.log

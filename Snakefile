@@ -68,6 +68,7 @@ rule collect_paper_assets:
 rule compile_paper:
     input:
         manuscript="paper/activity_dynamics.tex",
+        references="paper/activity_dynamics.bib",
         figures=PAPER_FIGURES,
         template=["paper/jmlr.cls", "paper/jmlrutils.sty"],
     output:
