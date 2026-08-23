@@ -3,6 +3,10 @@ Generate figures for the activity-space NTK paper.
 Same computation as the interactive demo, frozen into publication-quality plots.
 """
 
+import argparse
+import os
+from pathlib import Path
+
 import numpy as np
 import matplotlib
 
@@ -667,6 +671,20 @@ def plot_dynamics(ax, history, show_loss_label=True):
 
 
 # ======================== MAIN ========================
+
+parser = argparse.ArgumentParser(
+    description="Run the main activity-kernel simulations and render all figures."
+)
+parser.add_argument(
+    "--output-dir",
+    required=True,
+    type=Path,
+    help="Directory for publication-ready PDF figures and PNG previews.",
+)
+args = parser.parse_args()
+output_dir = args.output_dir.resolve()
+output_dir.mkdir(parents=True, exist_ok=True)
+os.chdir(output_dir)
 
 print("Running width=8 experiment...")
 history_width_8, snapshot_width_8, _ = run_experiment(

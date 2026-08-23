@@ -4,12 +4,28 @@ A short paper showing that gradient descent on network weights induces **kernel 
 
 **Key result:** When the kernel is diagonally dominant (wide networks), each neuron's activity change is approximately proportional to the negative loss gradient with respect to that neuron's activity — converting untestable claims about synaptic learning rules into testable predictions about observable activity changes.
 
-## Files
+## Reproduce the results
 
-- [`activity_dynamics.tex`](activity_dynamics.tex) — Paper source
-- [`activity_dynamics.pdf`](https://github.com/koerding/ADescent/raw/main/activity_dynamics.pdf) — Compiled PDF
-- [`gen_figures.py`](gen_figures.py) — Python script to generate figures
-- [`index.html`](index.html) — Live interactive demo page served directly by GitHub Pages
+Install `uv`, then run the complete dependency graph from the repository root:
+
+```bash
+uv run snakemake --cores 1
+```
+
+This regenerates seeded simulation outputs, publication-ready figures,
+manuscript assets, and the compiled paper. The Snakemake dependency graph is
+the authoritative provenance record.
+To rebuild one step, use `uv run snakemake --cores 1 --forcerun <rule_name>`.
+
+## Repository layout
+
+- [`Snakefile`](Snakefile) — the executable workflow and artifact lineage
+- [`analysis/`](analysis/) — one explicit entrypoint per workflow step
+- [`data/generated/`](data/generated/) — machine-generated intermediates
+- [`results/`](results/) — final scientific tables and figures
+- [`paper/activity_dynamics.tex`](paper/activity_dynamics.tex) — manuscript source
+- [`paper/activity_dynamics.pdf`](https://github.com/koerding/ADescent/raw/main/paper/activity_dynamics.pdf) — compiled paper
+- [`index.html`](index.html) — static interactive demo for GitHub Pages
 
 ## Interactive Demo
 

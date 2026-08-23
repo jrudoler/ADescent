@@ -2,16 +2,18 @@
 Does dropout make the per-layer kernel Φ more diagonal, and does that improve
 r(ΔA, -∂ℒ/∂A) — the testable correlation from the paper?
 
-Self-contained variant of gen_figures.py with dropout-aware forward/backward
-and Jacobian assembly. Run via `uv run experiment_dropout.py`.
+Self-contained dropout-aware simulation with forward/backward passes and
+Jacobian assembly. Normally run through Snakemake.
 
 Outputs:
-  - fig_dropout_sweep.{pdf,png}
-  - fig_dropout_phi_heatmaps.{pdf,png}
-  - dropout_results.json
+  - data/generated/dropout_results.json
+  - results/figures/fig_dropout_sweep.{pdf,png}
+  - results/figures/fig_dropout_phi_heatmaps.{pdf,png}
 """
 
+import argparse
 import json
+from pathlib import Path
 
 import numpy as np
 import matplotlib
@@ -39,6 +41,9 @@ CONDITIONS = [
     {"width": 48, "p": 0.33, "label": "w=48, p=0.33"},
     {"width": 48, "p": 0.5, "label": "w=48, p=0.5"},
 ]
+
+DATA_OUTPUT = Path("dropout_results.json")
+FIGURE_OUTPUT_DIR = Path(".")
 
 
 # ======================== NETWORK ========================
@@ -517,6 +522,8 @@ def run_condition(width, depth, dropout_p, seed, n_steps, diag_every, eta):
 
 
 def main():
+    DATA_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    FIGURE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     results = []
     last_phis = {}  # keyed by (width, p) for heatmap figure
     for cond in CONDITIONS:
@@ -543,7 +550,7 @@ def main():
                 "infer": phi_infer.tolist() if phi_infer is not None else None,
             }
 
-    with open("dropout_results.json", "w") as f:
+    with DATA_OUTPUT.open("w") as f:
         json.dump(
             {
                 "config": {
@@ -559,7 +566,7 @@ def main():
             f,
             indent=2,
         )
-    print("Saved dropout_results.json")
+    print(f"Saved {DATA_OUTPUT}")
 
     # Aggregate: take mean of the last 3 diagnostic steps per (condition, seed)
     # to summarise the trained state, then mean ± std over seeds.
@@ -657,8 +664,8 @@ def plot_sweep(summary):
         fontsize=9,
     )
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    plt.savefig("fig_dropout_sweep.pdf", bbox_inches="tight", facecolor="#faf9f6")
-    plt.savefig("fig_dropout_sweep.png", bbox_inches="tight", facecolor="#faf9f6")
+    plt.savefig(FIGURE_OUTPUT_DIR / "fig_dropout_sweep.pdf", bbox_inches="tight", facecolor="#faf9f6")
+    plt.savefig(FIGURE_OUTPUT_DIR / "fig_dropout_sweep.png", bbox_inches="tight", facecolor="#faf9f6")
     print("Saved fig_dropout_sweep.{pdf,png}")
     plt.close(fig)
 
@@ -684,11 +691,29 @@ def plot_phi_heatmaps(last_phis):
             ax.tick_params(labelsize=6)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     plt.tight_layout()
-    plt.savefig("fig_dropout_phi_heatmaps.pdf", bbox_inches="tight", facecolor="#faf9f6")
-    plt.savefig("fig_dropout_phi_heatmaps.png", bbox_inches="tight", facecolor="#faf9f6")
+    plt.savefig(FIGURE_OUTPUT_DIR / "fig_dropout_phi_heatmaps.pdf", bbox_inches="tight", facecolor="#faf9f6")
+    plt.savefig(FIGURE_OUTPUT_DIR / "fig_dropout_phi_heatmaps.png", bbox_inches="tight", facecolor="#faf9f6")
     print("Saved fig_dropout_phi_heatmaps.{pdf,png}")
     plt.close(fig)
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Run dropout simulations and render their diagnostic figures."
+    )
+    parser.add_argument(
+        "--data-output",
+        required=True,
+        type=Path,
+        help="Path for the generated JSON intermediate.",
+    )
+    parser.add_argument(
+        "--figure-output-dir",
+        required=True,
+        type=Path,
+        help="Directory for publication-ready PDF figures and PNG previews.",
+    )
+    args = parser.parse_args()
+    DATA_OUTPUT = args.data_output
+    FIGURE_OUTPUT_DIR = args.figure_output_dir
     main()

@@ -175,7 +175,7 @@ Figure~2 sweeps width from 4 to 128 (3 random seeds per width, each trained for 
 \newpage
 \begin{figure}[h!]
   \centering
-  \includegraphics[width=\textwidth]{fig_ntk.pdf}
+  \includegraphics[width=\textwidth]{generated/figures/fig_ntk.pdf}
   \iffalse
   \caption{\textbf{In a wide network doing weight descent, activity changes closely match activity-space gradient descent.}  Top row: width\,=\,8.  Middle row: width\,=\,48.  Left: normalised $\Phi^{(\ell)}_{ik}$ heatmaps (white = uncorrelated, blue = correlated).  Scatter panels: predicted vs.\ actual $\Delta A$ for the full kernel (Eq.\,3), the diagonal approximation (Eq.\,5), and raw $-\partial L/\partial A$.  Dead ReLU neurons excluded.  Bottom row: $r(\Delta A,\,-\partial L/\partial A)$ and loss over training.}
   \fi
@@ -187,7 +187,7 @@ Figure~2 sweeps width from 4 to 128 (3 random seeds per width, each trained for 
 
 \begin{figure}[h!]
   \centering
-  \includegraphics[width=0.55\textwidth]{fig_width_sweep.pdf}
+  \includegraphics[width=0.55\textwidth]{generated/figures/fig_width_sweep.pdf}
   \iffalse
   \caption{\textbf{The wider the network, the more faithfully activity changes track the activity-space loss gradient.}  Pearson $r$ between actual $\Delta A$ and $-\partial L/\partial A$ as a function of hidden-layer width.  Dead ReLU neurons excluded.  Shaded regions: $\pm1$ s.d.\ across seeds.}
   \fi
@@ -351,7 +351,7 @@ Agreement between measured and hatted predictions validates the isotropic-$\vh$ 
 
 \begin{figure}[h!]
   \centering
-  \includegraphics[width=0.95\textwidth]{fig_depth_sweep.pdf}
+  \includegraphics[width=0.95\textwidth]{generated/figures/fig_depth_sweep.pdf}
   \caption{\textbf{Depth sweep at fixed width ($n=32$, 3 seeds).}  Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against network depth.  Orange: raw gradient $-\partial \loss/\partial A$.  Green: gradient scaled by $\Phi^{(\ell)}_{ii}$.  Left panel averages the first 3 diagnostics (initialisation regime); right panel averages the last 5 diagnostics (after 1500 SGD steps).  Dotted curves mark the leading-order predictions: $r_{\rm raw}(D,\rho{=}0.5)$ from Eq.\,\ref{eq:r-derivation} (orange; nearly flat near $0.87$--$0.89$ across this depth range because $\rho=d/n=16/32$) and $r_{\rm scaled}\approx 1$ (green).}\label{fig:depth-sweep}
 \end{figure}
 
@@ -377,7 +377,7 @@ which falls from $\approx 0.99$ at $n=4$ to $\sqrt{3/5}\approx 0.775$ as $n\to\i
 
 \begin{figure}[h!]
   \centering
-  \includegraphics[width=0.95\textwidth]{fig_width_sweep_appendix.pdf}
+  \includegraphics[width=0.95\textwidth]{generated/figures/fig_width_sweep_appendix.pdf}
   \caption{\textbf{Width sweep at fixed depth ($D=3$, 3 seeds).}  Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against hidden-layer width $n$ on a log scale.  Orange: raw gradient $-\partial \loss/\partial A$.  Green: gradient scaled by $\Phi^{(\ell)}_{ii}$.  Left: averages over the first 3 diagnostics (initialisation regime).  Right: averages over the last 5 diagnostics (after 1500 SGD steps).  Dotted curves mark the leading-order predictions: $r_{\rm raw}(3,d/n)$ from Eq.\,\ref{eq:r-derivation} (orange; descending to $\sqrt{3/5}\approx 0.775$ at large $n$) and $r_{\rm scaled}\approx 1$ (green).}\label{fig:width-sweep-appendix}
 \end{figure}
 
