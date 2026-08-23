@@ -329,6 +329,86 @@ def compute_jacobian_and_predictions(
     )
 
 
+def compute_kernel_diagonal_predictions(
+    layer_sizes,
+    weight_matrices,
+    activities_by_layer,
+    pre_activations_by_layer,
+    loss_gradient_by_activity,
+    learning_rate,
+):
+    """Compute sweep diagnostics without materializing the full Jacobian.
+
+    For layer ``ell``, the activity kernel obeys
+
+        Phi_ell = q_ell D_ell^2 + B_ell Phi_{ell-1} B_ell.T,
+
+    where ``q_ell`` is the squared norm of the bias-augmented presynaptic
+    activity and ``B_ell`` is the inter-layer activity Jacobian. Keeping the
+    current layer kernel is sufficient to recover every diagonal entry used by
+    Eq. 5. This is algebraically equivalent to taking row norms of the full
+    activity Jacobian, but uses O(width^2) rather than O(width^3) memory.
+    """
+    num_layers = len(weight_matrices)
+    neuron_counts = layer_sizes[1:]
+    total_neurons = sum(neuron_counts)
+    phi_diagonal = np.zeros(total_neurons)
+    backprop_activity_gradient = np.zeros(total_neurons)
+    active_neuron_mask = np.zeros(total_neurons)
+
+    previous_layer_kernel = None
+    layer_offset = 0
+    for layer_index in range(num_layers):
+        output_width = layer_sizes[layer_index + 1]
+        if layer_index < num_layers - 1:
+            activation_derivative = (
+                pre_activations_by_layer[layer_index + 1] > 0
+            ).astype(float)
+        else:
+            activation_derivative = np.ones(output_width)
+
+        augmented_activity_norm_sq = np.sum(activities_by_layer[layer_index] ** 2) + 1.0
+        current_layer_kernel = np.diag(
+            augmented_activity_norm_sq * activation_derivative**2
+        )
+
+        if previous_layer_kernel is not None:
+            inter_layer_jacobian = (
+                activation_derivative[:, None] * weight_matrices[layer_index][:, :-1]
+            )
+            propagated_kernel = inter_layer_jacobian @ previous_layer_kernel
+            current_layer_kernel += propagated_kernel @ inter_layer_jacobian.T
+
+        layer_slice = slice(layer_offset, layer_offset + output_width)
+        phi_diagonal[layer_slice] = np.diag(current_layer_kernel)
+        backprop_activity_gradient[layer_slice] = loss_gradient_by_activity[
+            layer_index + 1
+        ]
+        active_neuron_mask[layer_slice] = activation_derivative
+
+        previous_layer_kernel = current_layer_kernel
+        layer_offset += output_width
+
+    diagonal_prediction = -learning_rate * phi_diagonal * backprop_activity_gradient
+    kernel_prediction = compute_layer_local_prediction(
+        layer_sizes,
+        weight_matrices,
+        activities_by_layer,
+        pre_activations_by_layer,
+        loss_gradient_by_activity,
+        learning_rate,
+    )
+    raw_negative_gradient = -backprop_activity_gradient * active_neuron_mask
+
+    return (
+        kernel_prediction,
+        diagonal_prediction,
+        raw_negative_gradient,
+        neuron_counts,
+        active_neuron_mask,
+    )
+
+
 def corr(actual_values, predicted_values):
     # Pearson correlation over neuron indices. This removes the mean first, so
     # it measures centered linear alignment, not cosine similarity.
@@ -347,19 +427,26 @@ def corr(actual_values, predicted_values):
 # ======================== RUN EXPERIMENT ========================
 
 
-def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
+def run_experiment(
+    width,
+    depth,
+    eta=0.005,
+    n_steps=2000,
+    diag_every=50,
+    full_jacobian=True,
+):
     """
     Train one random MLP with online SGD and periodically compare the observed
     single-step activity change against several predictions.
 
     Most SGD steps only update weights. Every `diag_every` steps we also:
       1. sample one training example,
-      2. compute J, Φ, and the predicted ΔA for that sample,
+      2. compute the requested kernel diagnostics for that sample,
       3. apply the real SGD step on that same sample,
       4. measure the resulting activity change ΔA on that same sample.
 
     The returned history contains:
-      corr_exact: r(actual ΔA, JΔW)
+      corr_exact: r(actual ΔA, JΔW), or NaN when full_jacobian=False
       corr_kernel: r(actual ΔA, full kernel Eq. 3)
       corr_diagonal: r(actual ΔA, diagonal Eq. 5)
       corr_raw_gradient: r(actual ΔA, raw -dℒ/dA)
@@ -405,23 +492,41 @@ def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
                     for layer_index in range(1, len(weight_matrices) + 1)
                 ]
             )
-            (
-                exact_prediction,
-                kernel_prediction,
-                diagonal_prediction,
-                raw_negative_gradient,
-                layerwise_kernel_matrix,
-                neuron_counts,
-                active_neuron_mask,
-            ) = compute_jacobian_and_predictions(
-                layer_sizes,
-                weight_matrices,
-                activities_by_layer,
-                pre_activations_by_layer,
-                loss_gradient_by_weights,
-                loss_gradient_by_activity,
-                eta,
-            )
+            if full_jacobian:
+                (
+                    exact_prediction,
+                    kernel_prediction,
+                    diagonal_prediction,
+                    raw_negative_gradient,
+                    layerwise_kernel_matrix,
+                    neuron_counts,
+                    active_neuron_mask,
+                ) = compute_jacobian_and_predictions(
+                    layer_sizes,
+                    weight_matrices,
+                    activities_by_layer,
+                    pre_activations_by_layer,
+                    loss_gradient_by_weights,
+                    loss_gradient_by_activity,
+                    eta,
+                )
+            else:
+                (
+                    kernel_prediction,
+                    diagonal_prediction,
+                    raw_negative_gradient,
+                    neuron_counts,
+                    active_neuron_mask,
+                ) = compute_kernel_diagonal_predictions(
+                    layer_sizes,
+                    weight_matrices,
+                    activities_by_layer,
+                    pre_activations_by_layer,
+                    loss_gradient_by_activity,
+                    eta,
+                )
+                exact_prediction = None
+                layerwise_kernel_matrix = None
 
             # Apply the real SGD step on this exact sampled example.
             for layer_index in range(len(weight_matrices)):
@@ -444,10 +549,11 @@ def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
             # both the theory and the manuscript exclude them on that sample.
             active_neuron_indices = active_neuron_mask > 0
             actual_activity_change = full_activity_change[active_neuron_indices]
-            exact_prediction = exact_prediction[active_neuron_indices]
             kernel_prediction = kernel_prediction[active_neuron_indices]
             diagonal_prediction = diagonal_prediction[active_neuron_indices]
             raw_negative_gradient = raw_negative_gradient[active_neuron_indices]
+            if exact_prediction is not None:
+                exact_prediction = exact_prediction[active_neuron_indices]
 
             # These are the core diagnostics:
             #   corr_exact ~= 1 checks the Jacobian bookkeeping
@@ -456,7 +562,11 @@ def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
             #   corr_raw_gradient measures alignment with the raw activity
             #     gradient only and is stricter because Eq. 5 still allows
             #     neuron-specific Φ_ii
-            exact_correlation = corr(actual_activity_change, exact_prediction)
+            exact_correlation = (
+                corr(actual_activity_change, exact_prediction)
+                if exact_prediction is not None
+                else np.nan
+            )
             kernel_correlation = corr(actual_activity_change, kernel_prediction)
             diagonal_correlation = corr(actual_activity_change, diagonal_prediction)
             raw_gradient_correlation = corr(
@@ -486,34 +596,35 @@ def run_experiment(width, depth, eta=0.005, n_steps=2000, diag_every=50):
 
             # Keep a filtered snapshot for the figure panels: only active neurons
             # remain in the heatmap and scatter plots.
-            active_neuron_indices_flat = np.where(active_neuron_indices)[0]
-            filtered_kernel_matrix = layerwise_kernel_matrix[
-                np.ix_(active_neuron_indices_flat, active_neuron_indices_flat)
-            ]
-            filtered_neuron_counts = []
-            neuron_offset = 0
-            for layer_neuron_count in neuron_counts:
-                filtered_neuron_counts.append(
-                    int(
-                        np.sum(
-                            active_neuron_indices[
-                                neuron_offset : neuron_offset + layer_neuron_count
-                            ]
+            if full_jacobian:
+                active_neuron_indices_flat = np.where(active_neuron_indices)[0]
+                filtered_kernel_matrix = layerwise_kernel_matrix[
+                    np.ix_(active_neuron_indices_flat, active_neuron_indices_flat)
+                ]
+                filtered_neuron_counts = []
+                neuron_offset = 0
+                for layer_neuron_count in neuron_counts:
+                    filtered_neuron_counts.append(
+                        int(
+                            np.sum(
+                                active_neuron_indices[
+                                    neuron_offset : neuron_offset + layer_neuron_count
+                                ]
+                            )
                         )
                     )
-                )
-                neuron_offset += layer_neuron_count
+                    neuron_offset += layer_neuron_count
 
-            latest_snapshot = {
-                "actual_activity_change": actual_activity_change,
-                "exact_prediction": exact_prediction,
-                "kernel_prediction": kernel_prediction,
-                "diagonal_prediction": diagonal_prediction,
-                "raw_negative_gradient": raw_negative_gradient,
-                "Phi": filtered_kernel_matrix,
-                "neuron_counts": filtered_neuron_counts,
-                "step": step,
-            }
+                latest_snapshot = {
+                    "actual_activity_change": actual_activity_change,
+                    "exact_prediction": exact_prediction,
+                    "kernel_prediction": kernel_prediction,
+                    "diagonal_prediction": diagonal_prediction,
+                    "raw_negative_gradient": raw_negative_gradient,
+                    "Phi": filtered_kernel_matrix,
+                    "neuron_counts": filtered_neuron_counts,
+                    "step": step,
+                }
         else:
             # Cheap path: ordinary SGD with no Jacobian diagnostics.
             for layer_index in range(len(weight_matrices)):
@@ -831,7 +942,7 @@ print("Figure 1 saved.")
 
 # ======================== WIDTH SWEEP ========================
 
-widths = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128]
+widths = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]
 n_seeds = 3
 n_steps_sweep = 2000
 diag_every_sweep = 40
@@ -851,6 +962,7 @@ for width_value in widths:
             eta=0.005,
             n_steps=n_steps_sweep,
             diag_every=diag_every_sweep,
+            full_jacobian=False,
         )
         # If the diagonal approximation itself improves with width, this is the
         # directly relevant metric to inspect.
@@ -921,7 +1033,10 @@ width_sweep_ax.set_ylabel(
 width_sweep_ax.tick_params(labelsize=7)
 width_sweep_ax.legend(fontsize=7, loc="lower right", framealpha=0.8)
 width_sweep_ax.set_ylim(0.5, 1.05)
-width_sweep_ax.set_xlim(0, widths[-1] + 4)
+width_sweep_ax.set_xscale("log", base=2)
+width_sweep_ax.set_xticks([4, 8, 16, 32, 64, 128, 256, 512])
+width_sweep_ax.set_xticklabels(["4", "8", "16", "32", "64", "128", "256", "512"])
+width_sweep_ax.set_xlim(widths[0] / np.sqrt(2), widths[-1] * np.sqrt(2))
 
 # Save into the current project directory instead of an author-local path.
 plt.savefig("fig_width_sweep.pdf", bbox_inches="tight", facecolor="#faf9f6")
@@ -947,10 +1062,16 @@ for d in depths:
     print(f"  Depth sweep: d={d} ...", flush=True)
     for seed in range(n_seeds_d):
         np.random.seed(5000 + seed * 100 + d)
-        h, _, _ = run_experiment(width=depth_width, depth=d, eta=0.005,
-                                 n_steps=n_steps_depth, diag_every=diag_every_depth)
-        neg_vals = h['corr_raw_gradient']
-        diag_vals = h['corr_diagonal']
+        h, _, _ = run_experiment(
+            width=depth_width,
+            depth=d,
+            eta=0.005,
+            n_steps=n_steps_depth,
+            diag_every=diag_every_depth,
+            full_jacobian=False,
+        )
+        neg_vals = h["corr_raw_gradient"]
+        diag_vals = h["corr_diagonal"]
         # Init/early-training values (first 3 diagnostics) test the analytical prediction
         depth_neg_init[d].append(np.mean(neg_vals[:3]))
         depth_diag_init[d].append(np.mean(diag_vals[:3]))
@@ -969,17 +1090,34 @@ diag_late_mean = np.array([np.mean(depth_diag_late[d]) for d in depths])
 diag_late_std = np.array([np.std(depth_diag_late[d]) for d in depths])
 
 fig3, axes = plt.subplots(1, 2, figsize=(7.2, 2.8), dpi=200, sharey=True)
-fig3.patch.set_facecolor('#faf9f6')
+fig3.patch.set_facecolor("#faf9f6")
+
 
 def plot_depth_panel(ax, neg_mean, neg_std, diag_mean, diag_std, title):
-    ax.fill_between(d_arr, neg_mean - neg_std, neg_mean + neg_std,
-                    color='#d97706', alpha=0.15)
-    ax.plot(d_arr, neg_mean, 'o-', color='#d97706', linewidth=1.5, markersize=4,
-            label=r'$r(\Delta A,\;-\partial \mathcal{L}/\partial A)$ (raw)')
-    ax.fill_between(d_arr, diag_mean - diag_std, diag_mean + diag_std,
-                    color='#059669', alpha=0.15)
-    ax.plot(d_arr, diag_mean, 's-', color='#059669', linewidth=1.5, markersize=4,
-            label=r'$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A)$ (scaled)')
+    ax.fill_between(
+        d_arr, neg_mean - neg_std, neg_mean + neg_std, color="#d97706", alpha=0.15
+    )
+    ax.plot(
+        d_arr,
+        neg_mean,
+        "o-",
+        color="#d97706",
+        linewidth=1.5,
+        markersize=4,
+        label=r"$r(\Delta A,\;-\partial \mathcal{L}/\partial A)$ (raw)",
+    )
+    ax.fill_between(
+        d_arr, diag_mean - diag_std, diag_mean + diag_std, color="#059669", alpha=0.15
+    )
+    ax.plot(
+        d_arr,
+        diag_mean,
+        "s-",
+        color="#059669",
+        linewidth=1.5,
+        markersize=4,
+        label=r"$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A)$ (scaled)",
+    )
     # Leading-order raw-gradient prediction with Phi_ii ~ rho + ell - 1,
     # rho = d/n = 16/32 = 0.5 for the depth sweep (d=16 input, n=32 width).
     d_fine = np.linspace(d_arr[0], d_arr[-1], 200)
@@ -987,30 +1125,54 @@ def plot_depth_panel(ax, neg_mean, neg_std, diag_mean, diag_std, title):
     E_c = rho_depth + (d_fine - 1) / 2
     E_c2 = rho_depth**2 + rho_depth * (d_fine - 1) + (d_fine - 1) * (2 * d_fine - 1) / 6
     r_pred = E_c / np.sqrt(E_c2)
-    ax.plot(d_fine, r_pred, color='#d97706', linestyle=':', linewidth=1.2, alpha=0.7)
-    ax.text(d_arr[-1] - 0.1, r_pred[-1] - 0.05,
-            rf'raw pred. ($\rho{{=}}d/n{{=}}{rho_depth:g}$)',
-            fontsize=7, color='#a45a04', ha='right')
+    ax.plot(d_fine, r_pred, color="#d97706", linestyle=":", linewidth=1.2, alpha=0.7)
+    ax.text(
+        d_arr[-1] - 0.1,
+        r_pred[-1] - 0.05,
+        rf"raw pred. ($\rho{{=}}d/n{{=}}{rho_depth:g}$)",
+        fontsize=7,
+        color="#a45a04",
+        ha="right",
+    )
     # Scaled-gradient prediction is r = 1 under the diagonal approximation.
-    ax.axhline(1.0, color='#059669', linestyle=':', linewidth=1.2, alpha=0.7)
-    ax.text(d_arr[-1] - 0.1, 1.0 - 0.04, 'scaled pred. = 1',
-            fontsize=7, color='#047857', ha='right')
-    ax.axhline(0, color='#e8e5dd', linewidth=0.5)
-    ax.set_xlabel('depth (number of hidden layers)', fontsize=8)
+    ax.axhline(1.0, color="#059669", linestyle=":", linewidth=1.2, alpha=0.7)
+    ax.text(
+        d_arr[-1] - 0.1,
+        1.0 - 0.04,
+        "scaled pred. = 1",
+        fontsize=7,
+        color="#047857",
+        ha="right",
+    )
+    ax.axhline(0, color="#e8e5dd", linewidth=0.5)
+    ax.set_xlabel("depth (number of hidden layers)", fontsize=8)
     ax.tick_params(labelsize=7)
     ax.set_ylim(0, 1.1)
     ax.set_xlim(depths[0] - 0.3, depths[-1] + 0.3)
-    ax.set_title(title, fontsize=9, fontweight='bold')
+    ax.set_title(title, fontsize=9, fontweight="bold")
 
-plot_depth_panel(axes[0], neg_init_mean, neg_init_std, diag_init_mean, diag_init_std,
-                 'At initialisation (theory regime)')
-plot_depth_panel(axes[1], neg_late_mean, neg_late_std, diag_late_mean, diag_late_std,
-                 'After training (1500 SGD steps)')
-axes[0].set_ylabel('Pearson $r$', fontsize=8)
-axes[1].legend(fontsize=6.5, loc='lower right', framealpha=0.8)
 
-plt.savefig('fig_depth_sweep.pdf', bbox_inches='tight', facecolor='#faf9f6')
-plt.savefig('fig_depth_sweep.png', bbox_inches='tight', facecolor='#faf9f6')
+plot_depth_panel(
+    axes[0],
+    neg_init_mean,
+    neg_init_std,
+    diag_init_mean,
+    diag_init_std,
+    "At initialisation (theory regime)",
+)
+plot_depth_panel(
+    axes[1],
+    neg_late_mean,
+    neg_late_std,
+    diag_late_mean,
+    diag_late_std,
+    "After training (1500 SGD steps)",
+)
+axes[0].set_ylabel("Pearson $r$", fontsize=8)
+axes[1].legend(fontsize=6.5, loc="lower right", framealpha=0.8)
+
+plt.savefig("fig_depth_sweep.pdf", bbox_inches="tight", facecolor="#faf9f6")
+plt.savefig("fig_depth_sweep.png", bbox_inches="tight", facecolor="#faf9f6")
 print("Figure 3 (depth sweep) saved.")
 
 # ======================== APPENDIX WIDTH SWEEP ========================
@@ -1034,10 +1196,16 @@ for w in appendix_widths:
     print(f"  Appendix width sweep: w={w} ...", flush=True)
     for seed in range(n_seeds_w):
         np.random.seed(7000 + seed * 100 + w)
-        h, _, _ = run_experiment(width=w, depth=appendix_depth, eta=0.005,
-                                 n_steps=n_steps_width, diag_every=diag_every_width)
-        neg_vals = h['corr_raw_gradient']
-        diag_vals = h['corr_diagonal']
+        h, _, _ = run_experiment(
+            width=w,
+            depth=appendix_depth,
+            eta=0.005,
+            n_steps=n_steps_width,
+            diag_every=diag_every_width,
+            full_jacobian=False,
+        )
+        neg_vals = h["corr_raw_gradient"]
+        diag_vals = h["corr_diagonal"]
         width_neg_init[w].append(np.mean(neg_vals[:3]))
         width_diag_init[w].append(np.mean(diag_vals[:3]))
         width_neg_late[w].append(np.mean(neg_vals[-5:]))
@@ -1062,10 +1230,12 @@ w_diag_late_std = np.array([np.std(width_diag_late[w]) for w in appendix_widths]
 D_app = appendix_depth
 INPUT_DIM = 16  # 4x4 bar images
 
+
 def r_pred_raw(D, rho):
     E_c = rho + (D - 1) / 2.0
     E_c2 = rho**2 + rho * (D - 1) + (D - 1) * (2 * D - 1) / 6.0
     return E_c / np.sqrt(E_c2)
+
 
 # Smooth curve over the swept widths.
 n_fine = np.logspace(np.log10(appendix_widths[0]), np.log10(appendix_widths[-1]), 200)
@@ -1073,45 +1243,85 @@ r_pred_curve = r_pred_raw(D_app, INPUT_DIM / n_fine)
 r_pred_wide_limit = r_pred_raw(D_app, 0.0)  # n -> infinity at fixed d
 
 fig4, axesW = plt.subplots(1, 2, figsize=(7.2, 2.8), dpi=200, sharey=True)
-fig4.patch.set_facecolor('#faf9f6')
+fig4.patch.set_facecolor("#faf9f6")
+
 
 def plot_width_panel(ax, neg_mean, neg_std, diag_mean, diag_std, title):
-    ax.fill_between(w_arr, neg_mean - neg_std, neg_mean + neg_std,
-                    color='#d97706', alpha=0.15)
-    ax.plot(w_arr, neg_mean, 'o-', color='#d97706', linewidth=1.5, markersize=4,
-            label=r'$r(\Delta A,\;-\partial \mathcal{L}/\partial A)$ (raw)')
-    ax.fill_between(w_arr, diag_mean - diag_std, diag_mean + diag_std,
-                    color='#059669', alpha=0.15)
-    ax.plot(w_arr, diag_mean, 's-', color='#059669', linewidth=1.5, markersize=4,
-            label=r'$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A)$ (scaled)')
+    ax.fill_between(
+        w_arr, neg_mean - neg_std, neg_mean + neg_std, color="#d97706", alpha=0.15
+    )
+    ax.plot(
+        w_arr,
+        neg_mean,
+        "o-",
+        color="#d97706",
+        linewidth=1.5,
+        markersize=4,
+        label=r"$r(\Delta A,\;-\partial \mathcal{L}/\partial A)$ (raw)",
+    )
+    ax.fill_between(
+        w_arr, diag_mean - diag_std, diag_mean + diag_std, color="#059669", alpha=0.15
+    )
+    ax.plot(
+        w_arr,
+        diag_mean,
+        "s-",
+        color="#059669",
+        linewidth=1.5,
+        markersize=4,
+        label=r"$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A)$ (scaled)",
+    )
     # Raw-gradient prediction: r(D=3, rho=d/n) — decreases as n grows.
-    ax.plot(n_fine, r_pred_curve, color='#d97706', linestyle=':',
-            linewidth=1.2, alpha=0.7)
-    ax.text(w_arr[-1], r_pred_curve[-1] - 0.06,
-            rf'raw pred. ($\rho{{=}}d/n$, $n{{\to}}\infty$: $\sqrt{{3/5}}{{\approx}}{r_pred_wide_limit:.3f}$)',
-            fontsize=7, color='#a45a04', ha='right')
+    ax.plot(
+        n_fine, r_pred_curve, color="#d97706", linestyle=":", linewidth=1.2, alpha=0.7
+    )
+    ax.text(
+        w_arr[-1],
+        r_pred_curve[-1] - 0.06,
+        rf"raw pred. ($\rho{{=}}d/n$, $n{{\to}}\infty$: $\sqrt{{3/5}}{{\approx}}{r_pred_wide_limit:.3f}$)",
+        fontsize=7,
+        color="#a45a04",
+        ha="right",
+    )
     # Scaled-gradient prediction is r = 1 under the diagonal approximation.
-    ax.axhline(1.0, color='#059669', linestyle=':', linewidth=1.2, alpha=0.7)
-    ax.text(w_arr[-1], 1.0 - 0.04, 'scaled pred. = 1',
-            fontsize=7, color='#047857', ha='right')
-    ax.axhline(0, color='#e8e5dd', linewidth=0.5)
-    ax.set_xlabel('hidden layer width $n$', fontsize=8)
-    ax.set_xscale('log')
+    ax.axhline(1.0, color="#059669", linestyle=":", linewidth=1.2, alpha=0.7)
+    ax.text(
+        w_arr[-1],
+        1.0 - 0.04,
+        "scaled pred. = 1",
+        fontsize=7,
+        color="#047857",
+        ha="right",
+    )
+    ax.axhline(0, color="#e8e5dd", linewidth=0.5)
+    ax.set_xlabel("hidden layer width $n$", fontsize=8)
+    ax.set_xscale("log")
     ax.set_xticks(w_arr)
     ax.set_xticklabels([str(w) for w in appendix_widths], fontsize=7)
     ax.tick_params(labelsize=7)
     ax.set_ylim(0, 1.1)
-    ax.set_title(title, fontsize=9, fontweight='bold')
+    ax.set_title(title, fontsize=9, fontweight="bold")
 
-plot_width_panel(axesW[0], w_neg_init_mean, w_neg_init_std,
-                 w_diag_init_mean, w_diag_init_std,
-                 'At initialisation (theory regime)')
-plot_width_panel(axesW[1], w_neg_late_mean, w_neg_late_std,
-                 w_diag_late_mean, w_diag_late_std,
-                 'After training (1500 SGD steps)')
-axesW[0].set_ylabel('Pearson $r$', fontsize=8)
-axesW[1].legend(fontsize=6.5, loc='lower right', framealpha=0.8)
 
-plt.savefig('fig_width_sweep_appendix.pdf', bbox_inches='tight', facecolor='#faf9f6')
-plt.savefig('fig_width_sweep_appendix.png', bbox_inches='tight', facecolor='#faf9f6')
+plot_width_panel(
+    axesW[0],
+    w_neg_init_mean,
+    w_neg_init_std,
+    w_diag_init_mean,
+    w_diag_init_std,
+    "At initialisation (theory regime)",
+)
+plot_width_panel(
+    axesW[1],
+    w_neg_late_mean,
+    w_neg_late_std,
+    w_diag_late_mean,
+    w_diag_late_std,
+    "After training (1500 SGD steps)",
+)
+axesW[0].set_ylabel("Pearson $r$", fontsize=8)
+axesW[1].legend(fontsize=6.5, loc="lower right", framealpha=0.8)
+
+plt.savefig("fig_width_sweep_appendix.pdf", bbox_inches="tight", facecolor="#faf9f6")
+plt.savefig("fig_width_sweep_appendix.png", bbox_inches="tight", facecolor="#faf9f6")
 print("Figure 4 (appendix width sweep) saved.")
