@@ -987,62 +987,6 @@ late_diagonal_corr_std = np.array(
     [np.std(width_diagonal_corr_final[width_value]) for width_value in widths]
 )
 
-width_sweep_figure, width_sweep_ax = plt.subplots(figsize=(3.8, 2.8), dpi=200)
-width_sweep_figure.patch.set_facecolor("#faf9f6")
-
-width_sweep_ax.fill_between(
-    width_array,
-    late_diagonal_corr_mean - late_diagonal_corr_std,
-    late_diagonal_corr_mean + late_diagonal_corr_std,
-    color="#d97706",
-    alpha=0.15,
-)
-width_sweep_ax.plot(
-    width_array,
-    late_diagonal_corr_mean,
-    "o-",
-    color="#d97706",
-    linewidth=1.5,
-    markersize=4,
-    label=r"late training $r$",
-)
-
-width_sweep_ax.fill_between(
-    width_array,
-    median_diagonal_corr_mean - median_diagonal_corr_std,
-    median_diagonal_corr_mean + median_diagonal_corr_std,
-    color="#2563eb",
-    alpha=0.15,
-)
-width_sweep_ax.plot(
-    width_array,
-    median_diagonal_corr_mean,
-    "s--",
-    color="#2563eb",
-    linewidth=1.2,
-    markersize=3.5,
-    label=r"median $r$",
-)
-
-width_sweep_ax.axhline(1, color="#e8e5dd", linestyle="--", linewidth=0.5)
-width_sweep_ax.axhline(0, color="#e8e5dd", linewidth=0.5)
-width_sweep_ax.set_xlabel("hidden layer width", fontsize=8)
-width_sweep_ax.set_ylabel(
-    r"$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A_i)$", fontsize=8
-)
-width_sweep_ax.tick_params(labelsize=7)
-width_sweep_ax.legend(fontsize=7, loc="lower right", framealpha=0.8)
-width_sweep_ax.set_ylim(0.5, 1.05)
-width_sweep_ax.set_xscale("log", base=2)
-width_sweep_ax.set_xticks([4, 8, 16, 32, 64, 128, 256, 512])
-width_sweep_ax.set_xticklabels(["4", "8", "16", "32", "64", "128", "256", "512"])
-width_sweep_ax.set_xlim(widths[0] / np.sqrt(2), widths[-1] * np.sqrt(2))
-
-# Save into the current project directory instead of an author-local path.
-plt.savefig("fig_width_sweep.pdf", bbox_inches="tight", facecolor="#faf9f6")
-plt.savefig("fig_width_sweep.png", bbox_inches="tight", facecolor="#faf9f6")
-print("Figure 2 (width sweep) saved.")
-
 # ======================== DEPTH SWEEP ========================
 # Tests the appendix prediction: under He init, r(ΔA, -∂ℒ/∂A) is approximately
 # depth-independent (~√3/2), while r(ΔA, -Φ_ii ∂ℒ/∂A) approaches 1 with depth.
@@ -1050,13 +994,14 @@ print("Figure 2 (width sweep) saved.")
 depths = [2, 3, 4, 5, 6, 7, 8]
 depth_width = 32
 n_seeds_d = 3
-n_steps_depth = 1500
+n_steps_depth = 2000
 diag_every_depth = 40
 
 depth_neg_init = {d: [] for d in depths}
 depth_diag_init = {d: [] for d in depths}
 depth_neg_late = {d: [] for d in depths}
 depth_diag_late = {d: [] for d in depths}
+depth_diag_median = {d: [] for d in depths}
 
 for d in depths:
     print(f"  Depth sweep: d={d} ...", flush=True)
@@ -1078,6 +1023,7 @@ for d in depths:
         # Late training values
         depth_neg_late[d].append(np.mean(neg_vals[-5:]))
         depth_diag_late[d].append(np.mean(diag_vals[-5:]))
+        depth_diag_median[d].append(np.median(diag_vals))
 
 d_arr = np.array(depths)
 neg_init_mean = np.array([np.mean(depth_neg_init[d]) for d in depths])
@@ -1088,6 +1034,102 @@ neg_late_mean = np.array([np.mean(depth_neg_late[d]) for d in depths])
 neg_late_std = np.array([np.std(depth_neg_late[d]) for d in depths])
 diag_late_mean = np.array([np.mean(depth_diag_late[d]) for d in depths])
 diag_late_std = np.array([np.std(depth_diag_late[d]) for d in depths])
+diag_median_mean = np.array([np.mean(depth_diag_median[d]) for d in depths])
+diag_median_std = np.array([np.std(depth_diag_median[d]) for d in depths])
+
+# Figure 2 uses the same diagonal-approximation summary for a width sweep at
+# fixed depth and a depth sweep at fixed width.
+figure_two, figure_two_axes = plt.subplots(
+    1, 2, figsize=(7.2, 2.8), dpi=200, sharey=True
+)
+figure_two.patch.set_facecolor("#faf9f6")
+
+
+def plot_diagonal_correlation_sweep(
+    ax,
+    x_values,
+    late_mean,
+    late_std,
+    median_mean,
+    median_std,
+):
+    ax.fill_between(
+        x_values,
+        late_mean - late_std,
+        late_mean + late_std,
+        color="#d97706",
+        alpha=0.15,
+    )
+    ax.plot(
+        x_values,
+        late_mean,
+        "o-",
+        color="#d97706",
+        linewidth=1.5,
+        markersize=4,
+        label=r"late training $r$",
+    )
+    ax.fill_between(
+        x_values,
+        median_mean - median_std,
+        median_mean + median_std,
+        color="#2563eb",
+        alpha=0.15,
+    )
+    ax.plot(
+        x_values,
+        median_mean,
+        "s--",
+        color="#2563eb",
+        linewidth=1.2,
+        markersize=3.5,
+        label=r"median $r$",
+    )
+    ax.axhline(1, color="#e8e5dd", linestyle="--", linewidth=0.5)
+    ax.axhline(0, color="#e8e5dd", linewidth=0.5)
+    ax.tick_params(labelsize=7)
+    ax.set_ylim(0.5, 1.05)
+
+
+plot_diagonal_correlation_sweep(
+    figure_two_axes[0],
+    width_array,
+    late_diagonal_corr_mean,
+    late_diagonal_corr_std,
+    median_diagonal_corr_mean,
+    median_diagonal_corr_std,
+)
+figure_two_axes[0].set_xscale("log", base=2)
+figure_two_axes[0].set_xticks([4, 8, 16, 32, 64, 128, 256, 512])
+figure_two_axes[0].set_xticklabels(["4", "8", "16", "32", "64", "128", "256", "512"])
+figure_two_axes[0].set_xlim(widths[0] / np.sqrt(2), widths[-1] * np.sqrt(2))
+figure_two_axes[0].set_xlabel("hidden layer width", fontsize=8)
+figure_two_axes[0].set_ylabel(
+    r"$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A_i)$", fontsize=8
+)
+figure_two_axes[0].set_title(
+    "(a) Width sweep (depth = 3)", fontsize=9, fontweight="bold"
+)
+
+plot_diagonal_correlation_sweep(
+    figure_two_axes[1],
+    d_arr,
+    diag_late_mean,
+    diag_late_std,
+    diag_median_mean,
+    diag_median_std,
+)
+figure_two_axes[1].set_xticks(d_arr)
+figure_two_axes[1].set_xlim(depths[0] - 0.3, depths[-1] + 0.3)
+figure_two_axes[1].set_xlabel("number of hidden layers", fontsize=8)
+figure_two_axes[1].set_title(
+    "(b) Depth sweep (width = 32)", fontsize=9, fontweight="bold"
+)
+figure_two_axes[1].legend(fontsize=7, loc="lower left", framealpha=0.8)
+
+plt.savefig("fig_width_sweep.pdf", bbox_inches="tight", facecolor="#faf9f6")
+plt.savefig("fig_width_sweep.png", bbox_inches="tight", facecolor="#faf9f6")
+print("Figure 2 (width and depth sweeps) saved.")
 
 fig3, axes = plt.subplots(1, 2, figsize=(7.2, 2.8), dpi=200, sharey=True)
 fig3.patch.set_facecolor("#faf9f6")
@@ -1166,7 +1208,7 @@ plot_depth_panel(
     neg_late_std,
     diag_late_mean,
     diag_late_std,
-    "After training (1500 SGD steps)",
+    "After training (2000 SGD steps)",
 )
 axes[0].set_ylabel("Pearson $r$", fontsize=8)
 axes[1].legend(fontsize=6.5, loc="lower right", framealpha=0.8)

@@ -216,7 +216,7 @@ In short, weight descent implies the first-order kernel relation in Eq.\,3, and 
 \section{Experiments.}
 Figures~1--2 numerically verify Eqs.\,2--5 in a 3-hidden-layer ReLU MLP trained with online SGD ($\eta=0.005$) on a 2-class image dataset (4$\times$4 pixel images of horizontal vs.\ vertical bars, 20 per class, input dimension 16, output dimension 2).
 Dead ReLU neurons (pre-activation $\leq 0$ on the sampled input) are excluded from all analyses.
-At regular intervals during training, we compare predicted activity changes against the actual change measured after a single gradient step.  Figure~1 computes the full activity Jacobian $\partial A_i^{(\ell)}/\partial W_\alpha$ and the per-layer kernel $\Phi^{(\ell)}_{ik}$ to show detailed diagnostics at widths 8 and 48.  Figure~2 computes the same kernel diagonal exactly via the layerwise kernel recursion and sweeps width from 4 to 512 (3 random seeds per width, each trained for 2000 SGD steps) to quantify how the diagonal approximation in Eq.\,5 improves with width in this toy setting.
+At regular intervals during training, we compare predicted activity changes against the actual change measured after a single gradient step.  Figure~1 computes the full activity Jacobian $\partial A_i^{(\ell)}/\partial W_\alpha$ and the per-layer kernel $\Phi^{(\ell)}_{ik}$ to show detailed diagnostics at widths 8 and 48.  Figure~2 computes the same kernel diagonal exactly via the layerwise kernel recursion and varies either width from 4 to 512 at fixed depth 3 or depth from 2 to 8 at fixed width 32 (3 random seeds per setting, each trained for 2000 SGD steps).
 
 \begin{figure}[htbp]
   \floatconts
@@ -228,8 +228,8 @@ At regular intervals during training, we compare predicted activity changes agai
 \begin{figure}[htbp]
   \floatconts
   {fig:width-sweep}
-  {\caption{\textbf{The diagonal approximation improves with width in this toy setting.} Pearson $r$ between actual $\Delta A$ and $-\Phi_{ii}\,\partial \loss/\partial A_i$ as a function of hidden-layer width (log$_2$ scale). Dead ReLU neurons excluded. Shaded regions: $\pm1$ s.d.\ across seeds.}}
-  {\includegraphics[width=0.55\linewidth]{fig_width_sweep}}
+  {\caption{\textbf{Width and depth control the accuracy of the diagonal approximation in this toy setting.} Pearson $r$ between actual $\Delta A$ and $-\Phi_{ii}\,\partial \loss/\partial A_i$. (a) Hidden-layer width on a log$_2$ scale at fixed depth 3. (b) Number of hidden layers at fixed width 32. Orange shows the mean correlation over the final five diagnostics; blue shows the median correlation over training. Dead ReLU neurons excluded. Shaded regions: $\pm1$ s.d.\ across seeds.}}
+  {\includegraphics[width=0.95\linewidth]{fig_width_sweep}}
 \end{figure}
 
 \newpage
@@ -389,7 +389,7 @@ At regular intervals during training, we compare predicted activity changes agai
 % \begin{figure}[htbp]
 %   \floatconts
 %   {fig:depth-sweep}
-%   {\caption{\textbf{Depth sweep at fixed width ($n=32$, 3 seeds).} Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against network depth. Orange: raw gradient $-\partial \loss/\partial A$. Green: gradient scaled by $\Phi^{(\ell)}_{ii}$. Left panel averages the first 3 diagnostics (initialisation regime); right panel averages the last 5 diagnostics (after 1500 SGD steps). Dotted curves mark the leading-order predictions: $r_{\mathrm{raw}}(D,\rho{=}0.5)$ from Eq.\,\ref{eq:r-derivation} (orange; nearly flat near $0.87$--$0.89$ across this depth range because $\rho=d/n=16/32$) and $r_{\mathrm{scaled}}\approx 1$ (green).}}
+%   {\caption{\textbf{Depth sweep at fixed width ($n=32$, 3 seeds).} Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against network depth. Orange: raw gradient $-\partial \loss/\partial A$. Green: gradient scaled by $\Phi^{(\ell)}_{ii}$. Left panel averages the first 3 diagnostics (initialisation regime); right panel averages the last 5 diagnostics (after 2000 SGD steps). Dotted curves mark the leading-order predictions: $r_{\mathrm{raw}}(D,\rho{=}0.5)$ from Eq.\,\ref{eq:r-derivation} (orange; nearly flat near $0.87$--$0.89$ across this depth range because $\rho=d/n=16/32$) and $r_{\mathrm{scaled}}\approx 1$ (green).}}
 %   {\includegraphics[width=0.95\linewidth]{fig_depth_sweep}}
 % \end{figure}
 
