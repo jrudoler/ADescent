@@ -962,10 +962,21 @@ def plot_depth_panel(ax, neg_mean, neg_std, diag_mean, diag_std, title):
                     color='#059669', alpha=0.15)
     ax.plot(d_arr, diag_mean, 's-', color='#059669', linewidth=1.5, markersize=4,
             label=r'$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A)$ (scaled)')
-    ax.axhline(np.sqrt(3)/2, color='#b0a890', linestyle=':', linewidth=1.0)
-    ax.text(d_arr[-1] - 0.1, np.sqrt(3)/2 + 0.015, r'$\sqrt{3}/2$',
-            fontsize=7, color='#8a7d4a', ha='right')
-    ax.axhline(1, color='#e8e5dd', linestyle='--', linewidth=0.5)
+    # Leading-order raw-gradient prediction with Phi_ii ~ rho + ell - 1,
+    # rho = d/n = 16/32 = 0.5 for the depth sweep (d=16 input, n=32 width).
+    d_fine = np.linspace(d_arr[0], d_arr[-1], 200)
+    rho_depth = 16.0 / depth_width
+    E_c = rho_depth + (d_fine - 1) / 2
+    E_c2 = rho_depth**2 + rho_depth * (d_fine - 1) + (d_fine - 1) * (2 * d_fine - 1) / 6
+    r_pred = E_c / np.sqrt(E_c2)
+    ax.plot(d_fine, r_pred, color='#d97706', linestyle=':', linewidth=1.2, alpha=0.7)
+    ax.text(d_arr[-1] - 0.1, r_pred[-1] - 0.05,
+            rf'raw pred. ($\rho{{=}}d/n{{=}}{rho_depth:g}$)',
+            fontsize=7, color='#a45a04', ha='right')
+    # Scaled-gradient prediction is r = 1 under the diagonal approximation.
+    ax.axhline(1.0, color='#059669', linestyle=':', linewidth=1.2, alpha=0.7)
+    ax.text(d_arr[-1] - 0.1, 1.0 - 0.04, 'scaled pred. = 1',
+            fontsize=7, color='#047857', ha='right')
     ax.axhline(0, color='#e8e5dd', linewidth=0.5)
     ax.set_xlabel('depth (number of hidden layers)', fontsize=8)
     ax.tick_params(labelsize=7)
@@ -983,3 +994,106 @@ axes[1].legend(fontsize=6.5, loc='lower right', framealpha=0.8)
 plt.savefig('fig_depth_sweep.pdf', bbox_inches='tight', facecolor='#faf9f6')
 plt.savefig('fig_depth_sweep.png', bbox_inches='tight', facecolor='#faf9f6')
 print("Figure 3 (depth sweep) saved.")
+
+# ======================== APPENDIX WIDTH SWEEP ========================
+# Companion to the depth sweep: holds depth fixed at D=3 and sweeps width,
+# reporting raw and diagonally-scaled correlations at initialisation and after
+# training. Tests the finite-width assumption underlying the leading-order
+# r ~ sqrt(3(D+1)/(2(2D+1))) prediction.
+
+appendix_widths = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128]
+appendix_depth = 3
+n_seeds_w = 3
+n_steps_width = 1500
+diag_every_width = 40
+
+width_neg_init = {w: [] for w in appendix_widths}
+width_diag_init = {w: [] for w in appendix_widths}
+width_neg_late = {w: [] for w in appendix_widths}
+width_diag_late = {w: [] for w in appendix_widths}
+
+for w in appendix_widths:
+    print(f"  Appendix width sweep: w={w} ...", flush=True)
+    for seed in range(n_seeds_w):
+        np.random.seed(7000 + seed * 100 + w)
+        h, _, _ = run_experiment(width=w, depth=appendix_depth, eta=0.005,
+                                 n_steps=n_steps_width, diag_every=diag_every_width)
+        neg_vals = h['corr_raw_gradient']
+        diag_vals = h['corr_diagonal']
+        width_neg_init[w].append(np.mean(neg_vals[:3]))
+        width_diag_init[w].append(np.mean(diag_vals[:3]))
+        width_neg_late[w].append(np.mean(neg_vals[-5:]))
+        width_diag_late[w].append(np.mean(diag_vals[-5:]))
+
+w_arr = np.array(appendix_widths)
+w_neg_init_mean = np.array([np.mean(width_neg_init[w]) for w in appendix_widths])
+w_neg_init_std = np.array([np.std(width_neg_init[w]) for w in appendix_widths])
+w_diag_init_mean = np.array([np.mean(width_diag_init[w]) for w in appendix_widths])
+w_diag_init_std = np.array([np.std(width_diag_init[w]) for w in appendix_widths])
+w_neg_late_mean = np.array([np.mean(width_neg_late[w]) for w in appendix_widths])
+w_neg_late_std = np.array([np.std(width_neg_late[w]) for w in appendix_widths])
+w_diag_late_mean = np.array([np.mean(width_diag_late[w]) for w in appendix_widths])
+w_diag_late_std = np.array([np.std(width_diag_late[w]) for w in appendix_widths])
+
+# Leading-order prediction for the raw correlation at fixed depth D=3:
+#   Phi_ii^(ell) ~ d + (ell-1)*n  (own-layer contribution is O(d) at layer 1,
+#   O(n) at layers >= 2), so up to a common scale c_ell ~ rho + ell - 1 with
+#   rho = d/n. Pooling uniformly over layers gives
+#     r ~ E[c] / sqrt(E[c^2])
+#       = (rho + (D-1)/2) / sqrt(rho^2 + rho(D-1) + (D-1)(2D-1)/6).
+D_app = appendix_depth
+INPUT_DIM = 16  # 4x4 bar images
+
+def r_pred_raw(D, rho):
+    E_c = rho + (D - 1) / 2.0
+    E_c2 = rho**2 + rho * (D - 1) + (D - 1) * (2 * D - 1) / 6.0
+    return E_c / np.sqrt(E_c2)
+
+# Smooth curve over the swept widths.
+n_fine = np.logspace(np.log10(appendix_widths[0]), np.log10(appendix_widths[-1]), 200)
+r_pred_curve = r_pred_raw(D_app, INPUT_DIM / n_fine)
+r_pred_wide_limit = r_pred_raw(D_app, 0.0)  # n -> infinity at fixed d
+
+fig4, axesW = plt.subplots(1, 2, figsize=(7.2, 2.8), dpi=200, sharey=True)
+fig4.patch.set_facecolor('#faf9f6')
+
+def plot_width_panel(ax, neg_mean, neg_std, diag_mean, diag_std, title):
+    ax.fill_between(w_arr, neg_mean - neg_std, neg_mean + neg_std,
+                    color='#d97706', alpha=0.15)
+    ax.plot(w_arr, neg_mean, 'o-', color='#d97706', linewidth=1.5, markersize=4,
+            label=r'$r(\Delta A,\;-\partial \mathcal{L}/\partial A)$ (raw)')
+    ax.fill_between(w_arr, diag_mean - diag_std, diag_mean + diag_std,
+                    color='#059669', alpha=0.15)
+    ax.plot(w_arr, diag_mean, 's-', color='#059669', linewidth=1.5, markersize=4,
+            label=r'$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A)$ (scaled)')
+    # Raw-gradient prediction: r(D=3, rho=d/n) — decreases as n grows.
+    ax.plot(n_fine, r_pred_curve, color='#d97706', linestyle=':',
+            linewidth=1.2, alpha=0.7)
+    ax.text(w_arr[-1], r_pred_curve[-1] - 0.06,
+            rf'raw pred. ($\rho{{=}}d/n$, $n{{\to}}\infty$: $\sqrt{{3/5}}{{\approx}}{r_pred_wide_limit:.3f}$)',
+            fontsize=7, color='#a45a04', ha='right')
+    # Scaled-gradient prediction is r = 1 under the diagonal approximation.
+    ax.axhline(1.0, color='#059669', linestyle=':', linewidth=1.2, alpha=0.7)
+    ax.text(w_arr[-1], 1.0 - 0.04, 'scaled pred. = 1',
+            fontsize=7, color='#047857', ha='right')
+    ax.axhline(0, color='#e8e5dd', linewidth=0.5)
+    ax.set_xlabel('hidden layer width $n$', fontsize=8)
+    ax.set_xscale('log')
+    ax.set_xticks(w_arr)
+    ax.set_xticklabels([str(w) for w in appendix_widths], fontsize=7)
+    ax.tick_params(labelsize=7)
+    ax.set_ylim(0, 1.1)
+    ax.set_title(title, fontsize=9, fontweight='bold')
+
+plot_width_panel(axesW[0], w_neg_init_mean, w_neg_init_std,
+                 w_diag_init_mean, w_diag_init_std,
+                 'At initialisation (theory regime)')
+plot_width_panel(axesW[1], w_neg_late_mean, w_neg_late_std,
+                 w_diag_late_mean, w_diag_late_std,
+                 'After training (1500 SGD steps)')
+axesW[0].set_ylabel('Pearson $r$', fontsize=8)
+axesW[1].legend(fontsize=6.5, loc='lower right', framealpha=0.8)
+
+plt.savefig('fig_width_sweep_appendix.pdf', bbox_inches='tight', facecolor='#faf9f6')
+plt.savefig('fig_width_sweep_appendix.png', bbox_inches='tight', facecolor='#faf9f6')
+print("Figure 4 (appendix width sweep) saved.")
