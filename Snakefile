@@ -69,7 +69,8 @@ rule compile_paper:
     input:
         manuscript="paper/activity_dynamics.tex",
         figures=PAPER_FIGURES,
+        template=["paper/jmlr.cls", "paper/jmlrutils.sty"],
     output:
         "paper/activity_dynamics.pdf",
     shell:
-        "latexmk -xelatex -interaction=nonstopmode -halt-on-error -cd {input.manuscript}"
+        "latexmk -pdf -interaction=nonstopmode -halt-on-error -cd {input.manuscript}"
