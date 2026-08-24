@@ -45,24 +45,20 @@ making learning rules testable}
 
 \begin{abstract}
   A central question in neuroscience is whether biological neural networks optimise a loss function by adjusting synaptic weights -- and if so, by what rule.
-  Decades of theoretical work have proposed candidate learning rules.
-  But synaptic weights cannot be measured at scale in behaving animals, so these proposals remain difficult to test directly.
-  Neural \emph{activities}, by contrast, can be recorded in large populations across learning.
-  This raises a concrete question: if the brain does perform gradient descent on its weights, what should we expect to see in the activities?
-  Here we show that the answer takes a surprisingly structured form: weight-space gradient descent induces kernel-filtered descent in activity space, and in diagonal-dominant regimes this reduces to approximately per-neuron activity descent.
-  The resulting prediction is directly testable with existing experimental techniques.
+  Candidate rules are difficult to test because synaptic weights cannot be measured at scale in behaving animals, whereas neural \emph{activities} can be recorded across learning.
+  This raises the question: if a network performs gradient descent on its weights, what should we see in its activities?
+  We show that weight-space gradient descent induces kernel-filtered activity descent; when the kernel is diagonal-dominant, each neuron approximately follows its own loss gradient.
+  This yields a prediction testable with existing experimental techniques.
 \end{abstract}
 
 \begin{keywords}
-  neural activity, gradient descent, neural tangent kernel, learning rules,
-  computational neuroscience
+  neural activity, gradient descent, learning rules, computational neuroscience
 \end{keywords}
 
-\vspace{-1.25em}
 \section{Weight-space descent and observable activity}
 \label{sec:main}
-Gradient descent on a neural network embodies a simple learning principle: \emph{the more that strengthening a synapse would improve downstream performance, the more that synapse is strengthened} (and vice versa---harmful synapses are weakened).
-We consider what this principle implies for the \emph{observable} neural activities in a network that is performing weight-space gradient descent.
+Gradient descent on the weights of a neural network embodies a simple learning principle: \emph{the more that strengthening a synapse would improve downstream performance, the more that synapse is strengthened} (and vice versa---harmful synapses are weakened).
+We consider what this implies for the \emph{observable} neural activations of the network.
 
 \paragraph{Setup and derivation.}
 Consider a feedforward network with layers $\ell=1,\ldots,L$, weights $\vW$, and neural activities $A_i^{(\ell)}(\vW)$, trained to minimise a loss $\loss$.
@@ -122,17 +118,15 @@ Architectures with skip connections require additional treatment, as weights can
 \paragraph{Relation to the neural tangent kernel.}
 The first-order approximation we study should be familiar to those acquainted with the neural tangent kernel (NTK) \citep{jacotNeuralTangentKernel2018}.
 The kernel $\Phi^{(\ell)}$ is a layer-wise analogue of the empirical neural tangent kernel (NTK) for finite-width networks \citep{leeWideNeuralNetworks2020}.
-We do not assume the network is wide enough for our kernel to be deterministic, and it need not be so for our purposes.
 
-\paragraph{The self term drives each neuron toward its own loss gradient.}
-The diagonal element $\Phi^{(\ell)}_{ii}=\lVert\grad A_i^{(\ell)}\rVert^2$ collects contributions from \emph{all} weights that influence neuron $i$---both its own incoming weights and every weight in earlier layers that lies on a path to it.
-Because $\Phi^{(\ell)}_{ii}\ge 0$, the self-term update is aligned with $-\partial \loss/\partial A_i^{(\ell)}$: each such neuron's activity moves down its own loss gradient, with an effective learning rate $\eta\,\Phi^{(\ell)}_{ii}$ that grows with the depth and width of its input pathways.  Dead ReLU units have $\Phi^{(\ell)}_{ii}=0$ and contribute no self-term drive.
+\paragraph{Self-terms drive each neuron toward its loss gradient; cross-terms interfere.}
+The diagonal element \smash{$\Phi^{(\ell)}_{ii}=\lVert\grad A_i^{(\ell)}\rVert^2$} collects contributions from \emph{all} weights that influence neuron $i$.
+Because $\Phi^{(\ell)}_{ii}\ge 0$, the self-term update is aligned with $-\partial \loss/\partial A_i^{(\ell)}$: each such neuron's activity moves down its own loss gradient, with an effective learning rate $\eta\,\Phi^{(\ell)}_{ii}$ that grows with the depth and width of its input pathways.  Dead ReLU units have $\Phi^{(\ell)}_{ii}=0$.
 
-\paragraph{Cross terms introduce interference from other neurons.}
-The off-diagonal elements $\Phi^{(\ell)}_{ik}=\grad A_i^{(\ell)}\cdot\grad A_k^{(\ell)}$ for $k\neq i$ couple neuron $i$ to every other neuron's loss gradient \emph{within the same layer}.
-Their magnitude reflects similarity of weight-space sensitivities, often arising from shared upstream parameters: two neurons whose activities depend on overlapping upstream weight directions can have large $|\Phi^{(\ell)}_{ik}|$, whereas neurons supported by effectively orthogonal parameter directions have $\Phi^{(\ell)}_{ik}\approx 0$.
-These cross terms have no reason to be aligned with $-\partial \loss/\partial A_i^{(\ell)}$ and constitute interference---the side-effect of the rest of the layer learning simultaneously.
-Whether the self term or the cross terms dominate determines whether activity changes look like activity-space gradient descent.
+The off-diagonal elements $\Phi^{(\ell)}_{ik}=\grad A_i^{(\ell)}\cdot\grad A_k^{(\ell)}$ for $k\neq i$ couple neurons \emph{within the same layer}.
+Two neurons whose activities depend on overlapping upstream weights can have large $|\Phi^{(\ell)}_{ik}|$, whereas neurons supported by effectively orthogonal parameter directions have $\Phi^{(\ell)}_{ik}\approx 0$.
+These cross terms need not align with $-\partial \loss/\partial A_i^{(\ell)}$.
+Whether the self-term or the cross-terms dominate determines whether activity changes look like activity-space gradient descent.
 
 \iffalse
 \paragraph{Wide networks make the kernel diagonal-dominant.}
@@ -147,31 +141,20 @@ The cross terms vanish when $\grad A_i^{(\ell)} \cdot \grad A_k^{(\ell)} \approx
 Taken together, these arguments imply that in sufficiently wide networks---and cortical circuits are very wide---the kernel $\Phi^{(\ell)}$ is approximately diagonal, and activity changes closely track the negative activity-space loss gradient.
 \fi
 \paragraph{Approximate kernel diagonality.}
-The cross terms are small when different neurons' activities depend on nearly orthogonal directions in upstream weight space. Equivalently,
-\[
-  \grad A_i^{(\ell)} \cdot \grad A_k^{(\ell)} \approx 0,
-  \qquad i\neq k.
-\]
-Whether this occurs depends on the architecture, the parameterization, and the learning task.
+Cross terms are small when different neurons' activities depend on nearly orthogonal directions in upstream weight space.
+Width can increase each neuron's private incoming parameters, but shared upstream weights mean that activity gradients need not become independent.
+Depth can strengthen these shared correlations, while learning may decorrelate effective pathways.
+The experiments below quantify how width and depth affect the resulting approximation.
 
-\emph{Width.}  Increasing width gives each neuron more private incoming parameters, which can enlarge the self term $\Phi^{(\ell)}_{ii}$.  But neurons in the same layer also share all upstream parameters, so their activity gradients are generally not independent. In some architectures and training regimes, width may decorrelate the shared component of the gradients, but this is not universal.
-
-\emph{Depth.}  Deeper layers share more upstream parameters. This can strengthen correlations between neurons' activity gradients.
-
-\emph{Learning dynamics.}  Training may also change this balance.  If learning decorrelates representations or routes different neurons through increasingly distinct effective pathways, the off-diagonal entries of $\Phi^{(\ell)}$ may shrink relative to the diagonal.
-
-\paragraph{The diagonal approximation: activity descent as a proxy for weight descent.}
-Combining the kernel identity (Eq.\,3) with diagonal dominance yields a simple approximation:
+\paragraph{Activity descent as a proxy for weight descent.}
+Combining the kernel identity (Equation~\eqref{eq:main}) with diagonal dominance yields a simple approximation:
 %
 \begin{equation}\label{eq:diag}
   \Delta A_i^{(\ell)} \;\approx\; -\eta\,\Phi^{(\ell)}_{ii}\;\frac{\partial \loss}{\partial A_i^{(\ell)}}\,.
 \end{equation}
 %
-The intuitive meaning mirrors that of weight descent: just as weight descent says \emph{strengthen each synapse in proportion to how much it helps}, activity descent says \emph{increase each neuron's firing in proportion to how much that increase would help} (and decrease it when it hurts).
-\iffalse
-Equation~5 shows that one implies the other in wide networks---the per-neuron scaling $\Phi^{(\ell)}_{ii}$ may differ across neurons, but every neuron's activity moves in the direction that locally reduces the loss.  This is the paper's central result: \emph{if a network performs gradient descent on its weights, and the network is wide enough, then its activity changes must approximately follow gradient descent in activity space.}  The approximation improves with width and, as our simulations show (Figs.\,1--2), is already accurate at moderate widths.
-\fi
-Equation~5 therefore identifies a useful approximation regime: when $\Phi^{(\ell)}$ is sufficiently diagonal-dominant, each neuron's activity moves in the direction that locally reduces the loss, up to a neuron-specific scaling factor $\Phi^{(\ell)}_{ii}$.
+Just as weight descent says \emph{strengthen each synapse in proportion to how much it helps}, activity descent says \emph{increase each neuron's firing in proportion to how much that increase would help} (and decrease it when it hurts).
+Equation~\eqref{eq:diag} therefore identifies a useful approximation regime: when $\Phi^{(\ell)}$ is sufficiently diagonal-dominant, each neuron's activity moves in the direction that locally reduces the loss, up to a neuron-specific scaling factor $\Phi^{(\ell)}_{ii}$.
 
 % \paragraph{Recursive structure.}
 % The per-layer kernel inherits a recursion from the feedforward computation.
@@ -199,43 +182,36 @@ Equation~5 therefore identifies a useful approximation regime: when $\Phi^{(\ell
 % When the inter-layer Jacobians decorrelate across neurons, this recursion can amplify diagonal structure from earlier layers; when shared upstream structure remains strong, substantial off-diagonal terms can persist.
 
 \paragraph{A testable prediction for neuroscience.}
-This result converts an untestable claim about synaptic learning rules into a testable prediction about observable activity changes.
-Synaptic weights cannot be measured at scale in vivo, but neural activities can.
-If a biological circuit performs \emph{any} form of gradient descent on its synaptic weights---even an approximate or noisy variant---and operates in a regime where $\Phi^{(\ell)}$ is approximately diagonal-dominant, then the observable activity changes must satisfy Eq.\,5.
-The per-neuron scaling $\Phi^{(\ell)}_{ii}$ is unknown and may vary across neurons, but the \emph{sign} of each active neuron's activity change is pinned: because $\Phi^{(\ell)}_{ii}\ge 0$ (and is strictly positive for active units), every such neuron must move in the direction that locally reduces the loss, i.e.\ $\operatorname{sign}(\Delta A_i^{(\ell)}) \approx \operatorname{sign}(-\partial \loss/\partial A_i^{(\ell)})$.
-Note that if $\Phi^{(\ell)}_{ii}$ varies substantially across neurons, the population vector $\Delta\vA^{(\ell)}$ will not be parallel to $-\nabla_{\!\vA^{(\ell)}}\loss$ but rather to $-\mathrm{diag}(\Phi^{(\ell)}_{ii})\,\nabla_{\!\vA^{(\ell)}}\loss$; the two directions coincide only when $\Phi^{(\ell)}_{ii}$ is approximately uniform.
-A concrete experimental protocol follows: record neural population activity across learning trials, estimate $\partial \loss/\partial A_i^{(\ell)}$ from a task-fitted model \citep{richardsStudyPlasticityHas2023}, and check whether the measured $\Delta A_i^{(\ell)}$ covaries positively with $-\partial \loss/\partial A_i^{(\ell)}$ across neurons.  Experimentally, $\Delta A_i^{(\ell)}$ should be estimated for matched task conditions or repeated stimuli across learning, so that the measured change is attributable to learning rather than to changes in the input distribution or behavioral state.  The unknown $\Phi^{(\ell)}_{ii}$ absorbs per-neuron scaling, so the test checks the sign pattern and rank-order correlation, not the exact magnitudes.  A robust failure of this sign alignment would falsify the conjunction of assumptions that the fitted downstream model gives the correct activity-space loss gradient, that the circuit is following a gradient-like synaptic update for that loss, and that the relevant activity kernel is sufficiently diagonal-dominant.  Because this test relies on estimating $\partial\loss/\partial A_i^{(\ell)}$ from a fitted downstream model, a negative result is ambiguous unless that model can be independently validated.
+If a biological circuit performs a gradient-like synaptic update in a diagonal-dominant regime, Equation~\eqref{eq:diag} predicts that each active neuron's change is sign-aligned with its negative loss gradient.
+This can be tested by recording population activity for matched task conditions across learning, estimating $\partial\loss/\partial A_i^{(\ell)}$ with a task-fitted model \citep{richardsStudyPlasticityHas2023}, and measuring sign agreement or rank correlation with $\Delta A_i^{(\ell)}$.
+Matching conditions isolate learning from changes in inputs or behavioural state; the unknown $\Phi^{(\ell)}_{ii}$ absorbs per-neuron gains, so exact magnitudes are not predicted.
+Robust misalignment would challenge the fitted gradient, the gradient-like update, or the diagonal-dominance assumption.
 
-\paragraph{Caveat: activity descent is necessary but not sufficient for weight descent.}
-The converse is weaker: observing that activities follow their loss gradient constrains the projection of $\Delta\vW$ onto the row space of the activity Jacobian $J_{\!A} = \partial \vA/\partial \vW$, but says nothing about the (typically vast) null space of weight changes that leave activities unchanged on the current input.  Many weight updates can induce the same observed $\Delta\vA$; the minimum-norm update for a specified activity change is given by the Jacobian pseudoinverse, $\Delta\vW_{\min} = J_{\!A}^{\!\top}(J_{\!A}J_{\!A}^{\!\top})^{+}\Delta\vA$, not generally by backpropagation.  Vanilla weight-gradient descent $\Delta\vW_{\mathrm{GD}} = -\eta\,J_{\!A}^{\!\top}\nabla_{\!\vA}\loss$ is one particular row-space update: it induces kernel descent $\Delta\vA \approx -\eta\,J_{\!A}J_{\!A}^{\!\top}\nabla_{\!\vA}\loss$, but the activity change alone does not identify that weight-level rule.
-\iffalse
-In short, weight descent implies activity descent (in wide networks), but activity descent does not uniquely identify the weight-level rule.
-\fi
-In short, weight descent implies the first-order kernel relation in Eq.\,3, and implies the simpler activity-descent form in Eq.\,5 when $\Phi^{(\ell)}$ is close to diagonal.
+\paragraph{Activity descent is necessary but not sufficient for weight descent.}
+Observing that activities follow their loss gradient constrains the projection of $\Delta\vW$ onto the row space of the activity Jacobian $\partial \vA/\partial \vW$, but says nothing about the (typically vast) null space of weight changes that leave activities unchanged on the current input.
+Many weight updates can induce the same observed $\Delta\vA$.
 
-\section{Experiments.}
-Figures~1--2 numerically verify Eqs.\,2--5 in a 3-hidden-layer ReLU MLP trained with online SGD ($\eta=0.005$) on a 2-class image dataset (4$\times$4 pixel images of horizontal vs.\ vertical bars, 20 per class, input dimension 16, output dimension 2).
-Dead ReLU neurons (pre-activation $\leq 0$ on the sampled input) are excluded from all analyses.
-At regular intervals during training, we compare predicted activity changes against the actual change measured after a single gradient step.  Figure~1 computes the full activity Jacobian $\partial A_i^{(\ell)}/\partial W_\alpha$ and the per-layer kernel $\Phi^{(\ell)}_{ik}$ to show detailed diagnostics at widths 8 and 48.  Figure~2 computes the same kernel diagonal exactly via the layerwise kernel recursion and varies either width from 4 to 512 at fixed depth 3 or depth from 2 to 8 at fixed width 32 (3 random seeds per setting, each trained for 2000 SGD steps).
+\paragraph{Experiments.}
+We test Equations~\eqref{eq:main} and~\eqref{eq:diag} in a 3-hidden-layer ReLU MLP trained by online SGD ($\eta=0.005$) on 40 binary $4\times4$ bar images (20 per class; input dimension 16; output dimension 2).
+Figure~\ref{fig:main-compact} compares predicted and measured single-step activity changes at widths 8 and 48, follows training at both widths, then sweeps width from 4 to 512 at fixed depth 3 and depth from 2 to 8 at fixed width 32.
+Each sweep uses three random seeds trained for 2000 SGD steps.
 
-\begin{figure}[htbp]
+\begin{figure}[tbp]
   \floatconts
-  {fig:ntk}
-  {\caption{\textbf{In a wide network doing weight descent, activity changes closely match activity-space gradient descent.} Top row: width\,=\,8. Middle row: width\,=\,48. Left: unnormalised $\Phi^{(\ell)}_{ik}$ heatmaps, each with its own horizontal colorbar (white = 0; colorbar shows raw kernel magnitude). Scatter panels: predicted vs.\ actual $\Delta A$ for the full kernel (Eq.\,3), the diagonal approximation $-\Phi_{ii}\,\partial \loss/\partial A_i$, and raw $-\partial \loss/\partial A$. Dead ReLU neurons excluded. Bottom row: $r(\Delta A,\;-\Phi_{ii}\,\partial \loss/\partial A_i)$ and loss over training.}}
-  {\includegraphics[width=\linewidth]{fig_ntk}}
+  {fig:main-compact}
+  {\caption{\textbf{Kernel descent and its diagonal approximation.} (a--d) Width 8 and (e--h) width 48: the full kernel predicts the activity update exactly, while diagonal scaling improves on the raw gradient. (i--j) Diagonal-approximation correlation and loss through training. (k--l) Accuracy across width and depth; orange shows the final-five mean, blue the training median, and bands $\pm1$ s.d.\ across three seeds. Dead ReLU units are excluded.}}
+  {\includegraphics[width=\linewidth]{fig_main_compact}}
 \end{figure}
 
-\begin{figure}[htbp]
-  \floatconts
-  {fig:width-sweep}
-  {\caption{\textbf{Width and depth control the accuracy of the diagonal approximation in this toy setting.} Pearson $r$ between actual $\Delta A$ and $-\Phi_{ii}\,\partial \loss/\partial A_i$. (a) Hidden-layer width on a log$_2$ scale at fixed depth 3. (b) Number of hidden layers at fixed width 32. Orange shows the mean correlation over the final five diagnostics; blue shows the median correlation over training. Dead ReLU neurons excluded. Shaded regions: $\pm1$ s.d.\ across seeds.}}
-  {\includegraphics[width=0.95\linewidth]{fig_width_sweep}}
-\end{figure}
-
-\newpage
+\clearpage
 \bibliography{activity_dynamics}
 
 \appendix
+
+\section{Additional diagnostics and caveats}
+
+\paragraph{Population-level scaling.}
+If $\Phi^{(\ell)}_{ii}$ varies substantially across neurons, the population vector $\Delta\vA^{(\ell)}$ is aligned with $-\mathrm{diag}(\Phi^{(\ell)}_{ii})\nabla_{\!\vA^{(\ell)}}\loss$, not generally with $-\nabla_{\!\vA^{(\ell)}}\loss$; the directions coincide only when the diagonal is approximately uniform.
 
 % \section{He initialisation, depth, and the raw-vs-scaled correlation predictions}
 

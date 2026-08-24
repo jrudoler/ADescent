@@ -13,6 +13,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 np.random.seed(42)
 
@@ -743,7 +744,7 @@ def plot_scatter(
     )
 
 
-def plot_dynamics(ax, history, show_loss_label=True):
+def plot_dynamics(ax, history, show_loss_label=True, show_legend=True):
     diagnostic_steps = history["step"]
     # The dynamics panel tracks the diagonal-approximation metric directly:
     # corr_diagonal = r(actual ΔA, Eq. 5 prediction).
@@ -778,7 +779,8 @@ def plot_dynamics(ax, history, show_loss_label=True):
     ax.set_xlabel("SGD step", fontsize=7)
     ax.set_ylabel(r"$r$", fontsize=7)
     ax.tick_params(labelsize=6)
-    ax.legend(fontsize=5.5, loc="lower left", framealpha=0.8)
+    if show_legend:
+        ax.legend(fontsize=5.5, loc="lower left", framealpha=0.8)
 
 
 # ======================== MAIN ========================
@@ -848,7 +850,7 @@ plot_scatter(
     snapshot_width_8["actual_activity_change"],
     snapshot_width_8["neuron_counts"],
     r"$\Phi\cdot\nabla \mathcal{L}$",
-    "Eq. 3 (kernel)",
+    "Kernel prediction",
 )
 
 diagonal_scatter_ax_width_8 = figure_one.add_subplot(grid_spec[0, 2])
@@ -899,7 +901,7 @@ plot_scatter(
     snapshot_width_48["actual_activity_change"],
     snapshot_width_48["neuron_counts"],
     r"$\Phi\cdot\nabla \mathcal{L}$",
-    "Eq. 3 (kernel)",
+    "Kernel prediction",
 )
 
 diagonal_scatter_ax_width_48 = figure_one.add_subplot(grid_spec[1, 2])
@@ -1130,6 +1132,187 @@ figure_two_axes[1].legend(fontsize=7, loc="lower left", framealpha=0.8)
 plt.savefig("fig_width_sweep.pdf", bbox_inches="tight", facecolor="#faf9f6")
 plt.savefig("fig_width_sweep.png", bbox_inches="tight", facecolor="#faf9f6")
 print("Figure 2 (width and depth sweeps) saved.")
+
+# ======================== COMPACT MAIN-TEXT FIGURE ========================
+# Collect the width=8 and width=48 diagnostics, training dynamics, and both
+# sweeps into one figure sized for the extended abstract.
+compact_figure = plt.figure(figsize=(7.2, 7.3), dpi=200)
+compact_figure.patch.set_facecolor("#faf9f6")
+compact_grid = GridSpec(
+    4,
+    4,
+    figure=compact_figure,
+    height_ratios=[0.90, 0.90, 0.72, 0.62],
+    hspace=0.68,
+    wspace=0.55,
+    left=0.07,
+    right=0.98,
+    top=0.96,
+    bottom=0.07,
+)
+
+def plot_compact_heatmap(ax, snapshot, panel_label, width):
+    heatmap_image = plot_phi_heatmap(
+        ax,
+        snapshot["Phi"],
+        snapshot["neuron_counts"],
+    )
+    ax.set_title(
+        f"({panel_label}) Activity kernel (width = {width})",
+        fontsize=7,
+        fontweight="bold",
+        pad=3,
+    )
+    heatmap_divider = make_axes_locatable(ax)
+    colorbar_ax = heatmap_divider.append_axes("bottom", size="3%", pad=0.05)
+    colorbar = compact_figure.colorbar(
+        heatmap_image,
+        cax=colorbar_ax,
+        orientation="horizontal",
+    )
+    colorbar.set_label(r"$\Phi^{(\ell)}_{ik}$", fontsize=5.5, labelpad=1)
+    colorbar.ax.tick_params(labelsize=4.5, length=2, pad=1)
+
+
+compact_heatmap_ax_width_8 = compact_figure.add_subplot(compact_grid[0, 0])
+plot_compact_heatmap(compact_heatmap_ax_width_8, snapshot_width_8, "a", 8)
+
+compact_kernel_ax_width_8 = compact_figure.add_subplot(compact_grid[0, 1])
+plot_scatter(
+    compact_kernel_ax_width_8,
+    snapshot_width_8["kernel_prediction"],
+    snapshot_width_8["actual_activity_change"],
+    snapshot_width_8["neuron_counts"],
+    r"$-\eta\Phi\nabla\mathcal{L}$",
+    "(b) Kernel prediction",
+)
+
+compact_diagonal_ax_width_8 = compact_figure.add_subplot(compact_grid[0, 2])
+plot_scatter(
+    compact_diagonal_ax_width_8,
+    snapshot_width_8["diagonal_prediction"],
+    snapshot_width_8["actual_activity_change"],
+    snapshot_width_8["neuron_counts"],
+    r"$-\eta\Phi_{ii}\,\partial\mathcal{L}/\partial A_i$",
+    "(c) Diagonal approximation",
+)
+
+compact_raw_ax_width_8 = compact_figure.add_subplot(compact_grid[0, 3])
+plot_scatter(
+    compact_raw_ax_width_8,
+    snapshot_width_8["raw_negative_gradient"],
+    snapshot_width_8["actual_activity_change"],
+    snapshot_width_8["neuron_counts"],
+    r"$-\partial\mathcal{L}/\partial A$",
+    "(d) Raw gradient",
+)
+compact_raw_ax_width_8.legend(
+    fontsize=4.2, loc="lower right", framealpha=0.8, markerscale=0.8
+)
+
+compact_heatmap_ax_width_48 = compact_figure.add_subplot(compact_grid[1, 0])
+plot_compact_heatmap(compact_heatmap_ax_width_48, snapshot_width_48, "e", 48)
+
+compact_kernel_ax = compact_figure.add_subplot(compact_grid[1, 1])
+plot_scatter(
+    compact_kernel_ax,
+    snapshot_width_48["kernel_prediction"],
+    snapshot_width_48["actual_activity_change"],
+    snapshot_width_48["neuron_counts"],
+    r"$-\eta\Phi\nabla\mathcal{L}$",
+    "(f) Kernel prediction",
+)
+
+compact_diagonal_ax = compact_figure.add_subplot(compact_grid[1, 2])
+plot_scatter(
+    compact_diagonal_ax,
+    snapshot_width_48["diagonal_prediction"],
+    snapshot_width_48["actual_activity_change"],
+    snapshot_width_48["neuron_counts"],
+    r"$-\eta\Phi_{ii}\,\partial\mathcal{L}/\partial A_i$",
+    "(g) Diagonal approximation",
+)
+
+compact_raw_ax = compact_figure.add_subplot(compact_grid[1, 3])
+plot_scatter(
+    compact_raw_ax,
+    snapshot_width_48["raw_negative_gradient"],
+    snapshot_width_48["actual_activity_change"],
+    snapshot_width_48["neuron_counts"],
+    r"$-\partial\mathcal{L}/\partial A$",
+    "(h) Raw gradient",
+)
+compact_raw_ax.legend(
+    fontsize=4.5, loc="lower right", framealpha=0.8, markerscale=0.8
+)
+
+compact_dynamics_ax_width_8 = compact_figure.add_subplot(compact_grid[2, :2])
+plot_dynamics(
+    compact_dynamics_ax_width_8,
+    history_width_8,
+    show_loss_label=False,
+    show_legend=False,
+)
+compact_dynamics_ax_width_8.set_title(
+    "(i) Training dynamics (width = 8)", fontsize=8, fontweight="bold"
+)
+
+compact_dynamics_ax_width_48 = compact_figure.add_subplot(
+    compact_grid[2, 2:], sharey=compact_dynamics_ax_width_8
+)
+plot_dynamics(compact_dynamics_ax_width_48, history_width_48, show_loss_label=True)
+compact_dynamics_ax_width_48.set_title(
+    "(j) Training dynamics (width = 48)", fontsize=8, fontweight="bold"
+)
+compact_dynamics_ax_width_48.tick_params(labelleft=False)
+
+compact_width_ax = compact_figure.add_subplot(compact_grid[3, :2])
+plot_diagonal_correlation_sweep(
+    compact_width_ax,
+    width_array,
+    late_diagonal_corr_mean,
+    late_diagonal_corr_std,
+    median_diagonal_corr_mean,
+    median_diagonal_corr_std,
+)
+compact_width_ax.set_xscale("log", base=2)
+compact_width_ax.set_xticks([4, 8, 16, 32, 64, 128, 256, 512])
+compact_width_ax.set_xticklabels(["4", "8", "16", "32", "64", "128", "256", "512"])
+compact_width_ax.set_xlim(widths[0] / np.sqrt(2), widths[-1] * np.sqrt(2))
+compact_width_ax.set_xlabel("hidden layer width", fontsize=7)
+compact_width_ax.set_ylabel("diagonal-approx. correlation $r$", fontsize=7)
+compact_width_ax.set_title(
+    "(k) Width sweep (depth = 3)", fontsize=8, fontweight="bold"
+)
+
+compact_depth_ax = compact_figure.add_subplot(
+    compact_grid[3, 2:], sharey=compact_width_ax
+)
+plot_diagonal_correlation_sweep(
+    compact_depth_ax,
+    d_arr,
+    diag_late_mean,
+    diag_late_std,
+    diag_median_mean,
+    diag_median_std,
+)
+compact_depth_ax.set_xticks(d_arr)
+compact_depth_ax.set_xlim(depths[0] - 0.3, depths[-1] + 0.3)
+compact_depth_ax.set_xlabel("number of hidden layers", fontsize=7)
+compact_depth_ax.set_title(
+    "(l) Depth sweep (width = 32)", fontsize=8, fontweight="bold"
+)
+compact_depth_ax.tick_params(labelleft=False)
+compact_depth_ax.legend(fontsize=6.2, loc="lower left", framealpha=0.8)
+
+compact_figure.savefig(
+    "fig_main_compact.pdf", bbox_inches="tight", facecolor="#faf9f6"
+)
+compact_figure.savefig(
+    "fig_main_compact.png", bbox_inches="tight", facecolor="#faf9f6"
+)
+plt.close(compact_figure)
+print("Compact main-text figure saved.")
 
 fig3, axes = plt.subplots(1, 2, figsize=(7.2, 2.8), dpi=200, sharey=True)
 fig3.patch.set_facecolor("#faf9f6")

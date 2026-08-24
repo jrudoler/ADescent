@@ -1,7 +1,7 @@
 """Reproducible workflow for simulations, figures, and manuscript."""
 
 MAIN_FIGURE_NAMES = [
-    "fig_ntk",
+    "fig_main_compact",
     "fig_width_sweep",
     "fig_depth_sweep",
     "fig_width_sweep_appendix",
