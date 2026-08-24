@@ -1,17 +1,19 @@
 """
-Does dropout make the per-layer kernel Φ more diagonal, and does that improve
-r(ΔA, -∂ℒ/∂A) — the testable correlation from the paper?
+Does training with dropout make the per-layer kernel Φ more diagonal, and does
+that improve the diagonal approximation to the activity update?
 
 Self-contained dropout-aware simulation with forward/backward passes and
 Jacobian assembly. Normally run through Snakemake.
 
 Outputs:
   - data/generated/dropout_results.json
+  - results/data/dropout_summary.csv
   - results/figures/fig_dropout_sweep.{pdf,png}
   - results/figures/fig_dropout_phi_heatmaps.{pdf,png}
 """
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
@@ -23,26 +25,29 @@ import matplotlib.pyplot as plt
 
 # ======================== CONFIG ========================
 
-DEPTH = 3
-N_STEPS = 500
-DIAG_EVERY = 50
-SEEDS = [0, 1]
+DEPTHS = [3, 4]
+WIDTH = 48
+N_STEPS = 10_000
+DIAG_EVERY = 200
+SEEDS = list(range(10))
 ETA = 0.005
 
-# Conditions for the proof-of-concept sweep.
-# Effective-width control: (w=48, p=0.5) and (w=24, p=0) have the same expected
-# number of active hidden units per layer (~24); the comparison isolates the
-# decorrelation effect of dropout from the smaller-layer effect.
+# Standard range: rates above 0.5 leave too few active units at width 48 and
+# increasingly test capacity loss rather than regularisation against coadaptation.
+DROPOUT_RATES = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
 CONDITIONS = [
-    {"width": 16, "p": 0.0, "label": "w=16, p=0\n(small baseline)"},
-    {"width": 24, "p": 0.0, "label": "w=24, p=0\n(eff-width ctrl for 48,0.5)"},
-    {"width": 32, "p": 0.0, "label": "w=32, p=0\n(eff-width ctrl for 48,0.33)"},
-    {"width": 48, "p": 0.0, "label": "w=48, p=0\n(full baseline)"},
-    {"width": 48, "p": 0.33, "label": "w=48, p=0.33"},
-    {"width": 48, "p": 0.5, "label": "w=48, p=0.5"},
+    {
+        "width": WIDTH,
+        "depth": depth,
+        "p": dropout_p,
+        "label": f"depth={depth}, p={dropout_p:.1f}",
+    }
+    for depth in DEPTHS
+    for dropout_p in DROPOUT_RATES
 ]
 
 DATA_OUTPUT = Path("dropout_results.json")
+SUMMARY_OUTPUT = Path("dropout_summary.csv")
 FIGURE_OUTPUT_DIR = Path(".")
 
 
@@ -132,10 +137,7 @@ def backprop(
             local_gradient = loss_gradient_by_activity[layer_index + 1].copy()
         else:
             relu_deriv = (pre_activations_by_layer[layer_index + 1] > 0).astype(float)
-            if (
-                dropout_masks is not None
-                and dropout_masks[layer_index + 1] is not None
-            ):
+            if dropout_masks is not None and dropout_masks[layer_index + 1] is not None:
                 mask = dropout_masks[layer_index + 1] * scale
             else:
                 mask = 1.0
@@ -213,7 +215,10 @@ def compute_jacobian_and_predictions(
         pre = pre_activations_by_layer[layer_index_one_based][neuron_index]
         if pre <= 0:
             return 0.0
-        if dropout_masks is not None and dropout_masks[layer_index_one_based] is not None:
+        if (
+            dropout_masks is not None
+            and dropout_masks[layer_index_one_based] is not None
+        ):
             return dropout_masks[layer_index_one_based][neuron_index] * scale
         return 1.0
 
@@ -354,10 +359,16 @@ def phi_ii_cv(Phi_active):
 
 
 def run_condition(width, depth, dropout_p, seed, n_steps, diag_every, eta):
-    rng = np.random.default_rng(seed)
+    # Separate streams make conditions paired across dropout rates: every p
+    # uses the same initial weights, dataset, and sampled-example order. Common
+    # mask randomness also makes higher-p masks nested versions of lower-p masks.
+    initialization_rng = np.random.default_rng(seed)
+    data_rng = np.random.default_rng(10_000 + seed)
+    sampling_rng = np.random.default_rng(20_000 + seed)
+    mask_rng = np.random.default_rng(30_000 + seed)
     layer_sizes = [16] + [width] * depth + [2]
-    weight_matrices = create_network(layer_sizes, rng)
-    inputs, targets = make_bar_images(20, rng)
+    weight_matrices = create_network(layer_sizes, initialization_rng)
+    inputs, targets = make_bar_images(20, data_rng)
     num_examples = len(inputs)
 
     history = {
@@ -369,7 +380,8 @@ def run_condition(width, depth, dropout_p, seed, n_steps, diag_every, eta):
         "train_corr_raw": [],
         "train_D_phi": [],
         "train_cv_phi_ii": [],
-        # Inference-mode Φ (mask off) compared to the same actual ΔA
+        # Counterfactual inference-mode diagnostic (mask off). This is the
+        # primary test of learned regularisation rather than acute sparsity.
         "infer_corr_kernel": [],
         "infer_corr_diagonal": [],
         "infer_corr_raw": [],
@@ -380,8 +392,8 @@ def run_condition(width, depth, dropout_p, seed, n_steps, diag_every, eta):
     last_phi_infer = None
 
     for step in range(n_steps):
-        sampled = int(rng.integers(num_examples))
-        masks = sample_dropout_masks(layer_sizes, dropout_p, rng)
+        sampled = int(sampling_rng.integers(num_examples))
+        masks = sample_dropout_masks(layer_sizes, dropout_p, mask_rng)
 
         acts, pre_acts = forward(
             weight_matrices, inputs[sampled], dropout_masks=masks, p=dropout_p
@@ -398,7 +410,10 @@ def run_condition(width, depth, dropout_p, seed, n_steps, diag_every, eta):
         do_diag = (step % diag_every == 0) or (step == n_steps - 1)
         if do_diag:
             acts_before = np.concatenate(
-                [acts[layer_index] for layer_index in range(1, len(weight_matrices) + 1)]
+                [
+                    acts[layer_index]
+                    for layer_index in range(1, len(weight_matrices) + 1)
+                ]
             )
 
             # Train-mode kernel: mask = the step's mask
@@ -414,9 +429,9 @@ def run_condition(width, depth, dropout_p, seed, n_steps, diag_every, eta):
                 p=dropout_p,
             )
 
-            # Inference-mode kernel: same weights+input, mask off. Use a deterministic
-            # forward and backward to recover the right activations/pre-activations
-            # for the inference setting (no scaling, no mask).
+            # Inference-mode counterfactual: same learned weights and input, but
+            # no acute mask. Measure the actual activity change after a temporary
+            # standard-GD step that never changes the dropout training path.
             acts_inf, pre_acts_inf = forward(
                 weight_matrices, inputs[sampled], dropout_masks=None, p=0.0
             )
@@ -438,6 +453,31 @@ def run_condition(width, depth, dropout_p, seed, n_steps, diag_every, eta):
                 eta,
                 dropout_masks=None,
                 p=0.0,
+            )
+            acts_inf_before = np.concatenate(
+                [
+                    acts_inf[layer_index]
+                    for layer_index in range(1, len(weight_matrices) + 1)
+                ]
+            )
+            counterfactual_weights = [
+                weights - eta * gradient
+                for weights, gradient in zip(weight_matrices, grads_W_inf, strict=True)
+            ]
+            acts_inf_after, _ = forward(
+                counterfactual_weights,
+                inputs[sampled],
+                dropout_masks=None,
+                p=0.0,
+            )
+            actual_change_inf_full = (
+                np.concatenate(
+                    [
+                        acts_inf_after[layer_index]
+                        for layer_index in range(1, len(weight_matrices) + 1)
+                    ]
+                )
+                - acts_inf_before
             )
 
             # Apply the real SGD step using the per-step (dropout-masked) gradients
@@ -473,13 +513,9 @@ def run_condition(width, depth, dropout_p, seed, n_steps, diag_every, eta):
             history["train_D_phi"].append(phi_diagonality(Phi_train_active))
             history["train_cv_phi_ii"].append(phi_ii_cv(Phi_train_active))
 
-            # For inference-mode Φ, use the inference active set; ΔA is the same
-            # measured actual change but indexed by the inference active mask. Since
-            # the inference active set is a superset of the train active set
-            # (it doesn't exclude dropped units), we use it to evaluate the inference
-            # kernel on its own native indexing.
+            # Evaluate the counterfactual no-dropout step on its native active set.
             infer_active = preds_infer["active_mask"] > 0
-            actual_change_inf = actual_change_full[infer_active]
+            actual_change_inf = actual_change_inf_full[infer_active]
             history["infer_corr_kernel"].append(
                 corr(actual_change_inf, preds_infer["kernel_prediction"][infer_active])
             )
@@ -521,23 +557,127 @@ def run_condition(width, depth, dropout_p, seed, n_steps, diag_every, eta):
 # ======================== SWEEP & PLOTS ========================
 
 
+SUMMARY_METRICS = [
+    "loss",
+    "train_corr_kernel",
+    "train_corr_diagonal",
+    "train_corr_raw",
+    "train_D_phi",
+    "train_cv_phi_ii",
+    "infer_corr_kernel",
+    "infer_corr_diagonal",
+    "infer_corr_raw",
+    "infer_D_phi",
+    "infer_cv_phi_ii",
+]
+
+
+def trained_mean(values):
+    """Mean over the final five diagnostics for one seed and condition."""
+    return float(np.mean(values[-5:])) if values else float("nan")
+
+
+def bootstrap_mean_ci(values, seed, n_bootstrap=10_000):
+    """Deterministic percentile bootstrap interval for a paired mean."""
+    values = np.asarray(values, dtype=float)
+    if np.all(values == values[0]):
+        constant = float(values[0])
+        return constant, constant
+    rng = np.random.default_rng(seed)
+    sample_indices = rng.integers(0, len(values), size=(n_bootstrap, len(values)))
+    bootstrap_means = np.mean(values[sample_indices], axis=1)
+    low, high = np.quantile(bootstrap_means, [0.025, 0.975])
+    return float(low), float(high)
+
+
+def summarise_results(results):
+    per_seed = {}
+    for result in results:
+        key = (result["depth"], result["p"], result["seed"])
+        per_seed[key] = {
+            metric: trained_mean(result["history"][metric])
+            for metric in SUMMARY_METRICS
+        }
+
+    summary_rows = []
+    for depth in DEPTHS:
+        baseline_by_seed = {seed: per_seed[(depth, 0.0, seed)] for seed in SEEDS}
+        for dropout_p in DROPOUT_RATES:
+            row = {
+                "width": WIDTH,
+                "depth": depth,
+                "dropout_p": dropout_p,
+                "n_seeds": len(SEEDS),
+                "n_steps": N_STEPS,
+            }
+            for metric in SUMMARY_METRICS:
+                values = np.array(
+                    [per_seed[(depth, dropout_p, seed)][metric] for seed in SEEDS]
+                )
+                row[f"{metric}_mean"] = float(np.mean(values))
+                row[f"{metric}_std"] = float(np.std(values, ddof=1))
+                row[f"{metric}_sem"] = float(
+                    np.std(values, ddof=1) / np.sqrt(len(values))
+                )
+
+            for metric in (
+                "infer_corr_diagonal",
+                "train_corr_diagonal",
+                "infer_D_phi",
+                "train_D_phi",
+                "loss",
+            ):
+                paired_differences = np.array(
+                    [
+                        per_seed[(depth, dropout_p, seed)][metric]
+                        - baseline_by_seed[seed][metric]
+                        for seed in SEEDS
+                    ]
+                )
+                ci_low, ci_high = bootstrap_mean_ci(
+                    paired_differences,
+                    seed=(
+                        40_000
+                        + 1_000 * depth
+                        + int(round(100 * dropout_p))
+                        + len(metric)
+                    ),
+                )
+                row[f"delta_{metric}_vs_p0_mean"] = float(np.mean(paired_differences))
+                row[f"delta_{metric}_vs_p0_ci_low"] = ci_low
+                row[f"delta_{metric}_vs_p0_ci_high"] = ci_high
+
+            summary_rows.append(row)
+
+    return per_seed, summary_rows
+
+
 def main():
     DATA_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    SUMMARY_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     FIGURE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     results = []
-    last_phis = {}  # keyed by (width, p) for heatmap figure
+    last_phis = {}  # keyed by (depth, width, p) for heatmap figure
     for cond in CONDITIONS:
         for seed in SEEDS:
             print(
-                f"Running width={cond['width']}, p={cond['p']}, seed={seed} ...",
+                f"Running depth={cond['depth']}, width={cond['width']}, "
+                f"p={cond['p']}, seed={seed} ...",
                 flush=True,
             )
             history, phi_train, phi_infer = run_condition(
-                cond["width"], DEPTH, cond["p"], seed, N_STEPS, DIAG_EVERY, ETA
+                cond["width"],
+                cond["depth"],
+                cond["p"],
+                seed,
+                N_STEPS,
+                DIAG_EVERY,
+                ETA,
             )
             results.append(
                 {
                     "width": cond["width"],
+                    "depth": cond["depth"],
                     "p": cond["p"],
                     "label": cond["label"],
                     "seed": seed,
@@ -545,22 +685,31 @@ def main():
                 }
             )
             # Keep the last seed's Φ for the heatmap figure (one snapshot per condition).
-            last_phis[(cond["width"], cond["p"])] = {
+            last_phis[(cond["depth"], cond["width"], cond["p"])] = {
                 "train": phi_train.tolist() if phi_train is not None else None,
                 "infer": phi_infer.tolist() if phi_infer is not None else None,
             }
+
+    _, summary_rows = summarise_results(results)
 
     with DATA_OUTPUT.open("w") as f:
         json.dump(
             {
                 "config": {
-                    "depth": DEPTH,
+                    "width": WIDTH,
+                    "depths": DEPTHS,
                     "n_steps": N_STEPS,
                     "diag_every": DIAG_EVERY,
                     "seeds": SEEDS,
                     "eta": ETA,
+                    "dropout_rates": DROPOUT_RATES,
                     "conditions": CONDITIONS,
+                    "primary_test": (
+                        "counterfactual no-dropout activity update at weights "
+                        "learned with each dropout rate"
+                    ),
                 },
+                "summary": summary_rows,
                 "results": results,
             },
             f,
@@ -568,131 +717,149 @@ def main():
         )
     print(f"Saved {DATA_OUTPUT}")
 
-    # Aggregate: take mean of the last 3 diagnostic steps per (condition, seed)
-    # to summarise the trained state, then mean ± std over seeds.
-    def trained_mean(values):
-        return float(np.mean(values[-3:])) if values else float("nan")
+    with SUMMARY_OUTPUT.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=summary_rows[0].keys())
+        writer.writeheader()
+        writer.writerows(summary_rows)
+    print(f"Saved {SUMMARY_OUTPUT}")
 
-    summary = {}
-    for cond in CONDITIONS:
-        key = (cond["width"], cond["p"])
-        summary[key] = {"label": cond["label"]}
-        for metric in [
-            "train_corr_kernel",
-            "train_corr_diagonal",
-            "train_corr_raw",
-            "train_D_phi",
-            "train_cv_phi_ii",
-            "infer_corr_kernel",
-            "infer_corr_diagonal",
-            "infer_corr_raw",
-            "infer_D_phi",
-            "infer_cv_phi_ii",
-        ]:
-            per_seed = [
-                trained_mean(r["history"][metric])
-                for r in results
-                if (r["width"], r["p"]) == key
-            ]
-            summary[key][metric + "_mean"] = float(np.mean(per_seed))
-            summary[key][metric + "_std"] = float(np.std(per_seed))
-
-    plot_sweep(summary)
+    plot_sweep(summary_rows)
     plot_phi_heatmaps(last_phis)
 
 
-def plot_sweep(summary):
-    fig, axes = plt.subplots(2, 3, figsize=(11.5, 5.5), dpi=200, sharex=True)
+def plot_sweep(summary_rows):
+    fig, axes = plt.subplots(2, 2, figsize=(7.5, 5.8), dpi=200, sharex=True)
     fig.patch.set_facecolor("#faf9f6")
-    cond_order = [(c["width"], c["p"]) for c in CONDITIONS]
-    labels = [summary[k]["label"] for k in cond_order]
-    x = np.arange(len(cond_order))
+    rows_by_depth = {
+        depth: [row for row in summary_rows if row["depth"] == depth]
+        for depth in DEPTHS
+    }
+    depth_colors = {DEPTHS[0]: "#059669", DEPTHS[1]: "#7c3aed"}
 
-    panel_metrics = [
-        ("corr_raw", "$r(\\Delta A, -\\partial\\mathcal{L}/\\partial A)$", (0.0, 1.0)),
-        (
-            "corr_diagonal",
-            "$r(\\Delta A, -\\Phi_{ii}\\,\\partial\\mathcal{L}/\\partial A_i)$",
-            (0.0, 1.05),
-        ),
-        ("D_phi", r"$\|\mathrm{diag}\Phi\|_F^2 / \|\Phi\|_F^2$", (0.0, 1.05)),
-    ]
-
-    for col, (metric, ylabel, ylim) in enumerate(panel_metrics):
-        for row, mode in enumerate(["train", "infer"]):
-            ax = axes[row, col]
-            means = [summary[k][f"{mode}_{metric}_mean"] for k in cond_order]
-            stds = [summary[k][f"{mode}_{metric}_std"] for k in cond_order]
-            colors = [
-                "#888" if p == 0 else "#2563eb" for (_, p) in cond_order
-            ]
-            ax.bar(x, means, yerr=stds, color=colors, capsize=3, alpha=0.85)
-            ax.set_xticks(x)
-            ax.set_ylim(*ylim)
-            ax.tick_params(labelsize=7)
-            if row == 1:
-                ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=6.5)
-            else:
-                ax.set_xticklabels([])
-            ax.set_ylabel(ylabel + ("\n(train Φ)" if row == 0 else "\n(infer Φ)"), fontsize=8)
-            ax.axhline(0, color="#ccc", linewidth=0.5)
-
-    # Annotate the key comparison: dropout (48, 0.5) vs effective-width control (24, 0)
-    ctrl_idx = cond_order.index((24, 0.0))
-    drop_idx = cond_order.index((48, 0.5))
-    for col, (metric, _, _) in enumerate(panel_metrics):
-        for row, mode in enumerate(["train", "infer"]):
-            ax = axes[row, col]
-            ctrl = summary[(24, 0.0)][f"{mode}_{metric}_mean"]
-            drop = summary[(48, 0.5)][f"{mode}_{metric}_mean"]
-            ax.annotate(
-                "",
-                xy=(drop_idx, drop),
-                xytext=(ctrl_idx, ctrl),
-                arrowprops=dict(
-                    arrowstyle="->",
-                    color="#d97706",
-                    lw=1.2,
-                    shrinkA=4,
-                    shrinkB=4,
-                ),
+    def plot_depth_comparison(ax, metric, ylabel, ylim=None):
+        for depth in DEPTHS:
+            depth_rows = rows_by_depth[depth]
+            dropout_rates = np.array([row["dropout_p"] for row in depth_rows])
+            means = np.array([row[f"{metric}_mean"] for row in depth_rows])
+            stds = np.array([row[f"{metric}_std"] for row in depth_rows])
+            ax.errorbar(
+                dropout_rates,
+                means,
+                yerr=stds,
+                marker="o",
+                linewidth=1.5,
+                capsize=3,
+                color=depth_colors[depth],
+                label=f"depth {depth}",
             )
+        ax.set_ylabel(ylabel, fontsize=8)
+        if ylim is not None:
+            ax.set_ylim(*ylim)
+        ax.legend(fontsize=6.5, framealpha=0.85)
+
+    plot_depth_comparison(
+        axes[0, 0],
+        "infer_corr_diagonal",
+        r"$r(\Delta A,-\Phi_{ii}\,\partial\mathcal{L}/\partial A_i)$",
+        (0.5, 1.02),
+    )
+    axes[0, 0].set_title("(a) Diagonal-approximation accuracy", fontsize=9)
+
+    plot_depth_comparison(
+        axes[0, 1],
+        "infer_D_phi",
+        r"$\|\mathrm{diag}\Phi\|_F^2/\|\Phi\|_F^2$",
+        (0.0, 1.02),
+    )
+    axes[0, 1].set_title("(b) Kernel diagonal energy", fontsize=9)
+
+    plot_depth_comparison(axes[1, 0], "loss", "inference-mode loss")
+    axes[1, 0].set_title("(c) Task performance", fontsize=9)
+
+    for depth in DEPTHS:
+        depth_rows = rows_by_depth[depth]
+        dropout_rates = np.array([row["dropout_p"] for row in depth_rows])
+        delta_means = np.array(
+            [row["delta_infer_corr_diagonal_vs_p0_mean"] for row in depth_rows]
+        )
+        ci_low = np.array(
+            [row["delta_infer_corr_diagonal_vs_p0_ci_low"] for row in depth_rows]
+        )
+        ci_high = np.array(
+            [row["delta_infer_corr_diagonal_vs_p0_ci_high"] for row in depth_rows]
+        )
+        axes[1, 1].errorbar(
+            dropout_rates,
+            delta_means,
+            yerr=np.vstack((delta_means - ci_low, ci_high - delta_means)),
+            marker="o",
+            linewidth=1.5,
+            capsize=3,
+            color=depth_colors[depth],
+            label=f"depth {depth}",
+        )
+    axes[1, 1].axhline(0, color="#9ca3af", linestyle="--", linewidth=0.8)
+    axes[1, 1].set_ylabel(r"paired $\Delta r$ vs. $p=0$ (95\% CI)", fontsize=8)
+    axes[1, 1].set_title("(d) Primary paired test", fontsize=9)
+    axes[1, 1].legend(fontsize=6.5, framealpha=0.85)
+
+    for ax in axes.flat:
+        ax.set_xticks(DROPOUT_RATES)
+        ax.set_xlabel("dropout probability $p$", fontsize=8)
+        ax.tick_params(labelsize=7)
 
     fig.suptitle(
-        f"Dropout × diagonality (depth={DEPTH}, {N_STEPS} steps, {len(SEEDS)} seeds; "
-        "orange arrow: eff-width-controlled effect of dropout)",
+        f"Dropout and depth (width={WIDTH}, {N_STEPS} steps, "
+        f"{len(SEEDS)} paired seeds; inference-mode evaluation)",
         fontsize=9,
     )
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    plt.savefig(FIGURE_OUTPUT_DIR / "fig_dropout_sweep.pdf", bbox_inches="tight", facecolor="#faf9f6")
-    plt.savefig(FIGURE_OUTPUT_DIR / "fig_dropout_sweep.png", bbox_inches="tight", facecolor="#faf9f6")
+    plt.savefig(
+        FIGURE_OUTPUT_DIR / "fig_dropout_sweep.pdf",
+        bbox_inches="tight",
+        facecolor="#faf9f6",
+    )
+    plt.savefig(
+        FIGURE_OUTPUT_DIR / "fig_dropout_sweep.png",
+        bbox_inches="tight",
+        facecolor="#faf9f6",
+    )
     print("Saved fig_dropout_sweep.{pdf,png}")
     plt.close(fig)
 
 
 def plot_phi_heatmaps(last_phis):
-    pairs = [
-        ((48, 0.0), "baseline (w=48, p=0)"),
-        ((48, 0.5), "dropout (w=48, p=0.5)"),
-    ]
     fig, axes = plt.subplots(2, 2, figsize=(7.5, 7), dpi=200)
     fig.patch.set_facecolor("#faf9f6")
-    for row, (key, label) in enumerate(pairs):
-        for col, mode in enumerate(["train", "infer"]):
+    for row, depth in enumerate(DEPTHS):
+        for col, dropout_p in enumerate((0.0, 0.5)):
             ax = axes[row, col]
-            mat = last_phis.get(key, {}).get(mode)
+            key = (depth, WIDTH, dropout_p)
+            mat = last_phis.get(key, {}).get("infer")
             if mat is None:
                 ax.set_axis_off()
                 continue
             mat = np.asarray(mat)
             v = float(np.max(np.abs(mat)))
             im = ax.imshow(mat, cmap="RdBu_r", vmin=-v, vmax=v)
-            ax.set_title(f"{label}\nΦ {mode}", fontsize=9)
+            ax.set_title(
+                f"depth={depth}, w={WIDTH}, p={dropout_p:.1f}\n"
+                r"inference-mode $\Phi$",
+                fontsize=9,
+            )
             ax.tick_params(labelsize=6)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     plt.tight_layout()
-    plt.savefig(FIGURE_OUTPUT_DIR / "fig_dropout_phi_heatmaps.pdf", bbox_inches="tight", facecolor="#faf9f6")
-    plt.savefig(FIGURE_OUTPUT_DIR / "fig_dropout_phi_heatmaps.png", bbox_inches="tight", facecolor="#faf9f6")
+    plt.savefig(
+        FIGURE_OUTPUT_DIR / "fig_dropout_phi_heatmaps.pdf",
+        bbox_inches="tight",
+        facecolor="#faf9f6",
+    )
+    plt.savefig(
+        FIGURE_OUTPUT_DIR / "fig_dropout_phi_heatmaps.png",
+        bbox_inches="tight",
+        facecolor="#faf9f6",
+    )
     print("Saved fig_dropout_phi_heatmaps.{pdf,png}")
     plt.close(fig)
 
@@ -713,7 +880,14 @@ if __name__ == "__main__":
         type=Path,
         help="Directory for publication-ready PDF figures and PNG previews.",
     )
+    parser.add_argument(
+        "--summary-output",
+        required=True,
+        type=Path,
+        help="Path for the final CSV summary and paired statistical contrasts.",
+    )
     args = parser.parse_args()
     DATA_OUTPUT = args.data_output
+    SUMMARY_OUTPUT = args.summary_output
     FIGURE_OUTPUT_DIR = args.figure_output_dir
     main()

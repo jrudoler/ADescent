@@ -24,6 +24,7 @@ rule all:
         MAIN_FIGURES,
         DROPOUT_FIGURES,
         "data/generated/dropout_results.json",
+        "results/data/dropout_summary.csv",
         PAPER_FIGURES,
         "paper/activity_dynamics.pdf",
 
@@ -44,11 +45,13 @@ rule run_dropout:
         lockfile="uv.lock",
     output:
         data="data/generated/dropout_results.json",
+        summary="results/data/dropout_summary.csv",
         figures=DROPOUT_FIGURES,
     shell:
         """
         PYTHONPATH=src uv run python {input.script} \
           --data-output {output.data} \
+          --summary-output {output.summary} \
           --figure-output-dir results/figures
         """
 
