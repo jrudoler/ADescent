@@ -1,6 +1,7 @@
 {
-  "latex-workshop.latex.autoBuild.run": "onSave",
-  "latex-workshop.latex.recipe.default": "latexmk-pdflatex",
+  "latex-workshop.latex.autoBuild.run": "onFileChange",
+  "latex-workshop.latex.build.enableMagicComments": false,
+  "latex-workshop.latex.recipe.default": "first",
   "latex-workshop.latex.recipes": [
     {
       "name": "latexmk-pdflatex",
@@ -15,6 +16,7 @@
         "-pdf",
         "-synctex=1",
         "-interaction=nonstopmode",
+        "-halt-on-error",
         "-file-line-error",
         "-cd",
         "%DOC%"
