@@ -43,14 +43,14 @@ making learning rules testable}
 \begin{document}
 
 \maketitle
-
+\vspace{-1em}
 \begin{abstract}
   A central question in neuroscience is whether biological neural networks optimise a loss function by adjusting synaptic weights -- and if so, by what rule.
   Candidate rules are difficult to test because synaptic weights cannot be measured at scale in behaving animals, whereas neural \emph{activities} can be recorded across learning.
   This raises the question: if a network performs gradient descent on its weights, what should we see in its activities?
   Here we show that weight-space gradient descent induces kernel-filtered activity descent; when the kernel is approximately diagonal, each neuron follows its own loss gradient.
   We validate this prediction in ANNs of moderate width and depth, showing that indeed changes in neural activities are correlated with their loss gradients.
-  The same relationship can and should be tested in biological neural networks with existing neuroscientific methods.
+  The same relationship can and should be tested in biological neural networks with existing experimental techniques.
 \end{abstract}
 
 \begin{keywords}
@@ -60,9 +60,10 @@ making learning rules testable}
 \paragraph{Weight-space descent and observable activity.}
 Neuroscience has long sought to understand learning rules in biological neural networks, and the success of ANNs trained by gradient descent has renewed interest in finding commensurate rules in the brain \citep{richardsDeepLearningFramework2019}.
 A key challenge, however, is that synaptic weights are not directly observable in vivo; modern neuroscience experiments measure neural activity instead.
-% Gradient descent on the weights of a neural network embodies a simple learning principle: \emph{the more that strengthening a synapse would improve downstream performance, the more that synapse is strengthened} (and vice versa).
-We consider what gradient descent on the weights implies for the \emph{observable} neural activations of the network.
+\cite{richardsStudyPlasticityHas2023} proposed validating gradient-based learning rules by observing how neural activity changes during learning, but implicitly assumed a link between gradient descent on synaptic weights and the resulting activity changes.
+We formalize that link here, showing that weight-space gradient descent induces kernel-filtered descent in neural activations.
 
+\vspace{-0.5em}
 \paragraph{Setup and derivation.}
 Consider a feedforward network with layers $\ell=1,\ldots,L$, weights $\vW$, and neural activities $A_i^{(\ell)}(\vW)$, trained to minimise a loss $\loss$.
 Let $\mathcal N_\ell:=\{1,\ldots,n_\ell\}$ index the neurons in layer~$\ell$, let $\mathcal P_r$ index the scalar weights in layer~$r$, and define the upstream parameter-index set $\mathcal P_{\leq\ell}:=\bigcup_{r=1}^{\ell}\mathcal P_r$.  Thus $i,j,k\in\mathcal N_\ell$ index neurons in a fixed layer, whereas $\alpha\in\mathcal P_{\leq\ell}$ indexes a scalar upstream weight $W_\alpha$.
@@ -115,13 +116,15 @@ where
 %
 is a Gram matrix defined on the activities within each layer, and $\partial \loss/\partial A_k^{(\ell)}$ is the full backpropagated loss gradient -- a sufficient statistic that compresses everything downstream layers contribute to the weight updates affecting layer~$\ell$.
 In vector form, $\Delta\vA^{(\ell)} \approx -\eta\,\Phi^{(\ell)}\,\nabla_{\!\vA^{(\ell)}}\loss$: gradient descent in weight space induces \emph{kernel descent} within each layer of activity space.
-It holds for any differentiable sequential feedforward network regardless of depth, width, or activation function.
+It holds for any differentiable sequential feedforward network;
 Architectures with skip connections require additional treatment, as weights can influence the loss through paths that bypass intermediate layers.
 
+\vspace{-0.5em}
 \paragraph{Relation to the neural tangent kernel.}
 The first-order approximation we study should be familiar to those acquainted with the neural tangent kernel (NTK) \citep{jacotNeuralTangentKernel2018}.
 The kernel $\Phi^{(\ell)}$ is a layer-wise analogue of the empirical neural tangent kernel (NTK) for finite-width networks \citep{leeWideNeuralNetworks2020}.
 
+\vspace{-0.5em}
 \paragraph{Self-terms drive each neuron toward its loss gradient; cross-terms interfere.}
 The diagonal element \smash{$\Phi^{(\ell)}_{ii}=\lVert\grad A_i^{(\ell)}\rVert^2$} collects contributions from \emph{all} weights that influence neuron $i$.
 Because $\Phi^{(\ell)}_{ii}\ge 0$, the self-term update is aligned with $-\partial \loss/\partial A_i^{(\ell)}$: each such neuron's activity moves down its own loss gradient, with an effective learning rate $\eta\,\Phi^{(\ell)}_{ii}$ that grows with the depth and width of its input pathways.
@@ -135,6 +138,7 @@ Width can increase each neuron's private incoming parameters, but shared upstrea
 Greater depth increases the number of shared upstream weights.
 Learning could have heterogenous effects, and may decorrelate the pathways leading to each neuron.
 
+\vspace{-0.5em}
 \paragraph{Activity descent for diagonal-dominant kernels.}
 In the case where $\Phi^{(\ell)}$ is diagonal-dominant, the kernel identity (Equation~\eqref{eq:main}) yields a simple approximation:
 %
@@ -170,17 +174,18 @@ Equation~\eqref{eq:diag} therefore identifies a useful approximation regime: whe
 % \fi
 % When the inter-layer Jacobians decorrelate across neurons, this recursion can amplify diagonal structure from earlier layers; when shared upstream structure remains strong, substantial off-diagonal terms can persist.
 
+\vspace{-0.5em}
 \paragraph{Experiments.}
-We test Equations~\eqref{eq:main} and~\eqref{eq:diag} in a ReLU MLP trained by online SGD ($\eta=0.005$) on 40 binary $4\times4$ bar images (20 per class; input dimension 16; output dimension 2).
-Figure~\ref{fig:main-compact} compares predicted and measured single-step activity changes at widths 8 and 48, follows training at both widths, then sweeps width from 4 to 512 at fixed depth 3 and depth from 2 to 8 at fixed width 32.
-Each sweep uses three random seeds trained for 2000 SGD steps.
+We test Equations~\eqref{eq:main} and~\eqref{eq:diag} in ReLU MLPs trained by online SGD (see full details in Appendix~\ref{app:experimental-details}).
+We can measure whether Equation~\eqref{eq:diag} holds by correlating the observed activity change $\Delta A_i^{(\ell)}$ with the negative loss gradient $-\partial \loss/\partial A_i^{(\ell)}$ across neurons.
+We report both this raw-gradient correlation and the correlation after including the neuron-specific gain $\Phi^{(\ell)}_{ii}$, pooling across all active hidden units and the two output units.
+The raw correlation is reduced by off-diagonal interference, by heterogeneity in the diagonal gains, and by higher-order Taylor error; the diagonally scaled correlation factors out gain heterogeneity and therefore more directly tests the diagonal-kernel approximation.
 
-We can measure if Equation~\eqref{eq:diag} holds by correlating the observed activity change $\Delta A_i^{(\ell)}$ with the negative loss gradient $-\partial \loss/\partial A_i^{(\ell)}$ across neurons.
-This correlation is reduced by off-diagonal interference, by heterogeneity in the diagonal gains $\Phi^{(\ell)}_{ii}$, and by higher-order Taylor error.
-Nonetheless, our experiments show that in ANNs of reasonable width and depth, the diagonal approximation is quite good: the correlation between the observed activity change and the predicted change from the diagonal kernel is high.
-The correlation improves with width but saturates at a value below 1, indicating that off-diagonal interference persists even in wide networks.
-Depth reduces the correlation somewhat, as neurons in deeper layers share more upstream pathways.
+Our results show that in ANNs of moderate width and depth, the diagonal approximation is quite good: activity changes and the raw gradient are correlated, and this correlation is further improved by the diagonal scaling.
+Neither correlation changes monotonically with width in the regime tested, suggesting that widening alone does not eliminate structured interactions between neurons.
+Both correlations decrease with depth, consistent with neurons in deeper networks sharing more upstream pathways and therefore experiencing stronger cross-neuron interference.
 
+\vspace{-0.5em}
 \paragraph{A testable prediction for neuroscience.}
 If a biological circuit performs a gradient-like synaptic update in a diagonal-dominant regime, Equation~\eqref{eq:diag} predicts that each active neuron's change is aligned with its negative loss gradient.
 \cite{richardsStudyPlasticityHas2023} proposed a concrete protocol using existing in vivo methods that could test this prediction.
@@ -188,21 +193,38 @@ Consider a task with a loss or criterion $\loss$ which is based on the animal's 
 They note that $\partial \loss/\partial A_i^{(\ell)}$ can be decomposed into the product $\partial \loss/\partial b \cdot \partial b/\partial A_i^{(\ell)}$, where $b$ is some measured behavior.
 The first factor $\partial \loss/\partial b$ is readily available from the task design, and the second factor $\partial b/\partial A_i^{(\ell)}$ can be estimated by stimulating neuron $i$ and measuring the effect on behavior $b$ (this is already done in many experiments via optogenetics).
 
-An important caveat is that activity descent is \emph{necessary but not sufficient} for weight descent.
-Observing that activities follow their loss gradient constrains the projection of $\Delta\vW$ onto the row space of the activity Jacobian $\partial \vA/\partial \vW$, but says nothing about the (typically vast) null space of weight changes that leave activities unchanged on the current input.
-Many weight updates can induce the same observed $\Delta\vA$.
+A key caveat is that activity descent is \emph{necessary but not sufficient} for weight descent.
+Observing that activities follow their loss gradient constrains the projection of $\Delta\vW$ onto the row space of the activity Jacobian $\partial \vA/\partial \vW$, but says nothing about the null space of weight changes that leave activities unchanged on the current input.
+% Many weight updates can induce the same observed $\Delta\vA$.
 
-\begin{figure}[b]
+Our work constitutes a theoretical and empirical demonstration that gradient descent in weight-space leads to approximate activity descent in artificial neural networks. Our findings suggest that the same relationship can be tested in biological neural networks, and that doing so could provide evidence for or against gradient-like learning rules in the brain.
+
+\vspace{-0.5em}
+\begin{figure}[hbtp]
   \floatconts
   {fig:main-compact}
-  {\caption{\textbf{Kernel descent and its diagonal approximation.} (a--d) Width 8 and (e--h) width 48: the full kernel predicts the activity update exactly, while diagonal scaling improves on the raw gradient. (i--j) Diagonal-approximation correlation and loss through training. (k--l) Accuracy across width and depth; orange shows the final-five mean, blue the training median, and bands $\pm1$ s.d.\ across three seeds. Dead ReLU units are excluded.}}
-  {\includegraphics[width=\linewidth]{fig_main_compact}}
+  {\caption{\textbf{Kernel descent and activity-gradient alignment.} (a--h) Full-kernel, diagonal, and raw-gradient predictions at widths 8 and 48. (i--j) Raw-gradient and diagonal-approximation correlations through training. (k--l) Median correlations across width and depth; bands show $\pm1$ s.d.\ across ten matched replicates.}}
+  {\includegraphics[width=\linewidth]{fig_main_compact}\vspace{-.75\baselineskip}}
 \end{figure}
 
 \clearpage
 \bibliography{activity_dynamics}
 
+\newpage
+
 \appendix
+\section{Experimental details}
+\label{app:experimental-details}
+
+All networks are trained by online SGD ($\eta=0.005$) with squared loss.
+The training set contains 40 noisy $4\times4$ horizontal- or vertical-bar images generated from binary templates with independent Gaussian pixel noise ($\sigma=0.15$; 20 examples per class; input dimension 16; linear output dimension 2).
+Weights use He initialisation and biases are initialised to zero.
+The representative width-8 and width-48 networks have three hidden layers and are trained for 3000 SGD steps.
+The width sweep ranges from 4 to 512 at fixed depth 3, and the depth sweep ranges from 2 to 8 at fixed width 32.
+Each sweep uses ten matched random replicates trained for 2000 SGD steps; within a replicate, every architecture receives the same generated dataset and sequence of sampled examples.
+Pearson correlations pool all active hidden and output units; inactive hidden ReLU units are excluded.
+In the sweep panels, each line is the across-replicate mean of the within-training median and bands show $\pm1$ s.d. across replicates.
+
 % \section{He initialisation, depth, and the raw-vs-scaled correlation predictions}
 
 % This appendix asks how the empirical correlations between $\Delta\vA$ and the gradient signal depend on depth $D$ and hidden width $n$ under He (Kaiming) initialisation, $W^{(\ell)}_{ij}\sim\mathcal{N}(0,\,2/n_{\ell-1})$.  Two correlations are reported in Figs.\,\ref{fig:depth-sweep}--\ref{fig:width-sweep-appendix}: the \emph{raw} correlation $r_{\mathrm{raw}}=r(\Delta\vA,\,-\nabla_{\!\vA}\loss)$ and the \emph{scaled} correlation $r_{\mathrm{scaled}}=r(\Delta\vA,\,-\Phi_{ii}\nabla_{\!\vA}\loss)$.  Under the diagonal approximation $\Delta A_i^{(\ell)}\approx-\eta\,\Phi^{(\ell)}_{ii}\,g_i^{(\ell)}$ the scaled signal is precisely $\Delta\vA/\eta$, so its leading-order prediction is $r_{\mathrm{scaled}}\approx 1$, with deviations attributable to off-diagonal kernel terms, $O(\eta^2)$ Taylor error, and ReLU-kink crossings.  The raw correlation is the one with non-trivial depth dependence: the per-neuron gain $\Phi^{(\ell)}_{ii}$ acts as a layer-dependent rescaling of the target.
@@ -355,7 +377,7 @@ Many weight updates can induce the same observed $\Delta\vA$.
 % \begin{figure}[htbp]
 %   \floatconts
 %   {fig:depth-sweep}
-%   {\caption{\textbf{Depth sweep at fixed width ($n=32$, 3 seeds).} Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against network depth. Orange: raw gradient $-\partial \loss/\partial A$. Green: gradient scaled by $\Phi^{(\ell)}_{ii}$. Left panel averages the first 3 diagnostics (initialisation regime); right panel averages the last 5 diagnostics (after 2000 SGD steps). Dotted curves mark the leading-order predictions: $r_{\mathrm{raw}}(D,\rho{=}0.5)$ from Eq.\,\ref{eq:r-derivation} (orange; nearly flat near $0.87$--$0.89$ across this depth range because $\rho=d/n=16/32$) and $r_{\mathrm{scaled}}\approx 1$ (green).}}
+%   {\caption{\textbf{Depth sweep at fixed width ($n=32$, 10 seeds).} Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against network depth. Orange: raw gradient $-\partial \loss/\partial A$. Green: gradient scaled by $\Phi^{(\ell)}_{ii}$. Left panel averages the first 3 diagnostics (initialisation regime); right panel averages the last 5 diagnostics (after 2000 SGD steps). Dotted curves mark the leading-order predictions: $r_{\mathrm{raw}}(D,\rho{=}0.5)$ from Eq.\,\ref{eq:r-derivation} (orange; nearly flat near $0.87$--$0.89$ across this depth range because $\rho=d/n=16/32$) and $r_{\mathrm{scaled}}\approx 1$ (green).}}
 %   {\includegraphics[width=0.95\linewidth]{fig_depth_sweep}}
 % \end{figure}
 
@@ -382,7 +404,7 @@ Many weight updates can induce the same observed $\Delta\vA$.
 % \begin{figure}[htbp]
 %   \floatconts
 %   {fig:width-sweep-appendix}
-%   {\caption{\textbf{Width sweep at fixed depth ($D=3$, 3 seeds).} Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against hidden-layer width $n$ on a log scale. Orange: raw gradient $-\partial \loss/\partial A$. Green: gradient scaled by $\Phi^{(\ell)}_{ii}$. Left: averages over the first 3 diagnostics (initialisation regime). Right: averages over the last 5 diagnostics (after 1500 SGD steps). Dotted curves mark the leading-order predictions: $r_{\mathrm{raw}}(3,d/n)$ from Eq.\,\ref{eq:r-derivation} (orange; descending to $\sqrt{3/5}\approx 0.775$ at large $n$) and $r_{\mathrm{scaled}}\approx 1$ (green).}}
+%   {\caption{\textbf{Width sweep at fixed depth ($D=3$, 10 seeds).} Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against hidden-layer width $n$ on a log scale. Orange: raw gradient $-\partial \loss/\partial A$. Green: gradient scaled by $\Phi^{(\ell)}_{ii}$. Left: averages over the first 3 diagnostics (initialisation regime). Right: averages over the last 5 diagnostics (after 1500 SGD steps). Dotted curves mark the leading-order predictions: $r_{\mathrm{raw}}(3,d/n)$ from Eq.\,\ref{eq:r-derivation} (orange; descending to $\sqrt{3/5}\approx 0.775$ at large $n$) and $r_{\mathrm{scaled}}\approx 1$ (green).}}
 %   {\includegraphics[width=0.95\linewidth]{fig_width_sweep_appendix}}
 % \end{figure}
 
@@ -395,7 +417,6 @@ Many weight updates can induce the same observed $\Delta\vA$.
 % \end{enumerate}
 % Init and trained panels track each other within noise, again indicating that the regime is set at initialisation.  Together with Fig.\,\ref{fig:depth-sweep}, this isolates the operative mechanisms: width controls the off-diagonal contribution (and hence the gap between $r_{\mathrm{scaled}}$ and $1$), while depth controls both the off-diagonal growth and the cross-layer-gradient correlations that further depress $r_{\mathrm{raw}}$.
 
-\newpage
 \section{Annotated layer-2 decomposition}
 
 To make the diagonal/off-diagonal split concrete, consider a standard layer-2 block (omitting biases for simplicity):
