@@ -43,7 +43,7 @@ making learning rules testable}
 \begin{document}
 
 \maketitle
-\vspace{-1em}
+
 \begin{abstract}
   A central question in neuroscience is whether biological neural networks optimise a loss function by adjusting synaptic weights -- and if so, by what rule.
   Candidate rules are difficult to test because synaptic weights cannot be measured at scale in behaving animals, whereas neural \emph{activities} can be recorded across learning.
@@ -199,12 +199,11 @@ Observing that activities follow their loss gradient constrains the projection o
 
 Our work constitutes a theoretical and empirical demonstration that gradient descent in weight-space leads to approximate activity descent in artificial neural networks. Our findings suggest that the same relationship can be tested in biological neural networks, and that doing so could provide evidence for or against gradient-like learning rules in the brain.
 
-\vspace{-0.5em}
 \begin{figure}[hbtp]
   \floatconts
   {fig:main-compact}
   {\caption{\textbf{Kernel descent and activity-gradient alignment.} (a--h) Full-kernel, diagonal, and raw-gradient predictions at widths 8 and 48. (i--j) Raw-gradient and diagonal-approximation correlations through training. (k--l) Median correlations across width and depth; bands show $\pm1$ s.d.\ across ten matched replicates.}}
-  {\includegraphics[width=\linewidth]{fig_main_compact}\vspace{-.75\baselineskip}}
+  {\includegraphics[width=\linewidth]{fig_main_compact}\vspace{-.5\baselineskip}}
 \end{figure}
 
 \clearpage
@@ -216,425 +215,112 @@ Our work constitutes a theoretical and empirical demonstration that gradient des
 \section{Experimental details}
 \label{app:experimental-details}
 
-All networks are trained by online SGD ($\eta=0.005$) with squared loss.
-The training set contains 40 noisy $4\times4$ horizontal- or vertical-bar images generated from binary templates with independent Gaussian pixel noise ($\sigma=0.15$; 20 examples per class; input dimension 16; linear output dimension 2).
-Weights use He initialisation and biases are initialised to zero.
-The representative width-8 and width-48 networks have three hidden layers and are trained for 3000 SGD steps.
+We use fully connected multilayer perceptrons with ReLU hidden units, the same width in every hidden layer, and a two-dimensional linear output.
+For an example $(\vA^{(0)},\vy)$, the loss is $\loss=\tfrac12\lVert\vA^{(L)}-\vy\rVert^2$.
+Each online-SGD step samples one training example uniformly with replacement and uses learning rate $\eta=0.005$.
+
+The training set contains 40 noisy $4\times4$ horizontal- or vertical-bar images (20 per class).
+Each image has one randomly selected row or column set to one, with independent Gaussian pixel noise of standard deviation $0.15$ added to all 16 pixels.
+Weights are initialised independently as $W_{ij}^{(\ell)}\sim\mathcal{N}(0,2/n_{\ell-1})$, and biases are initialised to zero.
+
+The representative width-8 and width-48 networks have three hidden layers and are trained for 3000 steps.
+Diagnostics are recorded every 30 steps and at the final step.
+For each diagnostic, the activities before and after the SGD update are evaluated on the same sampled example used for that update.
 The width sweep ranges from 4 to 512 at fixed depth 3, and the depth sweep ranges from 2 to 8 at fixed width 32.
-Each sweep uses ten matched random replicates trained for 2000 SGD steps; within a replicate, every architecture receives the same generated dataset and sequence of sampled examples.
-Pearson correlations pool all active hidden and output units; inactive hidden ReLU units are excluded.
-In the sweep panels, each line is the across-replicate mean of the within-training median and bands show $\pm1$ s.d. across replicates.
+Each sweep uses ten matched random replicates trained for 2000 steps, with diagnostics every 40 steps and at the final step.
+Within each replicate and sweep, every architecture receives the same generated dataset and sequence of sampled-example indices.
 
-% \section{He initialisation, depth, and the raw-vs-scaled correlation predictions}
+Each Pearson correlation pools the active hidden units and both output units for one diagnostic; hidden ReLU units that are inactive before the update are excluded.
+For each architecture and replicate, we take the median correlation across diagnostic steps.
+The sweep curve is the mean of these ten replicate medians, and its band shows one sample standard deviation across replicates ($\mathrm{ddof}=1$).
 
-% This appendix asks how the empirical correlations between $\Delta\vA$ and the gradient signal depend on depth $D$ and hidden width $n$ under He (Kaiming) initialisation, $W^{(\ell)}_{ij}\sim\mathcal{N}(0,\,2/n_{\ell-1})$.  Two correlations are reported in Figs.\,\ref{fig:depth-sweep}--\ref{fig:width-sweep-appendix}: the \emph{raw} correlation $r_{\mathrm{raw}}=r(\Delta\vA,\,-\nabla_{\!\vA}\loss)$ and the \emph{scaled} correlation $r_{\mathrm{scaled}}=r(\Delta\vA,\,-\Phi_{ii}\nabla_{\!\vA}\loss)$.  Under the diagonal approximation $\Delta A_i^{(\ell)}\approx-\eta\,\Phi^{(\ell)}_{ii}\,g_i^{(\ell)}$ the scaled signal is precisely $\Delta\vA/\eta$, so its leading-order prediction is $r_{\mathrm{scaled}}\approx 1$, with deviations attributable to off-diagonal kernel terms, $O(\eta^2)$ Taylor error, and ReLU-kink crossings.  The raw correlation is the one with non-trivial depth dependence: the per-neuron gain $\Phi^{(\ell)}_{ii}$ acts as a layer-dependent rescaling of the target.
+Analysis code is available in an \href{https://anonymous.4open.science/r/activity-descent-973C/README.md}{anonymized GitHub repository}.
 
-% \paragraph{Three variance-preservation properties of He init.}
-% For a ReLU MLP at initialisation, in the wide-Gaussian limit:
-% \begin{enumerate}
-%     \setlength\itemsep{0pt}
-%   \item[(i)] \emph{Forward signal preserved}: $\mathbb{E}\lVert\vA^{(\ell)}\rVert^2/n_\ell$ is independent of $\ell$ (design property of He init for ReLU).
-%   \item[(ii)] \emph{Backward signal preserved}: $\mathbb{E}\lVert\partial \loss/\partial\vA^{(\ell)}\rVert^2/n_\ell$ is also independent of $\ell$, by the dual He calculation.
-%   \item[(iii)] \emph{Per-layer Jacobian norms preserved}: $\mathbb{E}\lVert J^{(\ell\leftarrow m)}_{i,:}\rVert^2 = O(1)$, independent of $\ell-m$.
-% \end{enumerate}
+\section{Kernel recursion and self/cross decomposition}
+\label{app:kernel-recursion}
 
-% \paragraph{Leading-order calculation for the raw correlation.}
-% Let $J^{(\ell\leftarrow r)} = \partial\vA^{(\ell)}/\partial\vA^{(r)}$, with $J^{(\ell\leftarrow\ell)} = I$.  The contribution of weights in layer $r$ to $\Phi^{(\ell)}_{ii}$ is
-% \[
-%   C_{r\to\ell,i}
-%   \;=\;
-%   \sum_{p\in\text{layer}\,r}
-%   \bigl(J^{(\ell\leftarrow r)}_{ip}\bigr)^2\,
-%   [\sigma_r'(z_p^{(r)})]^2\,
-%   \lVert\vA^{(r-1)}\rVert^2\,,
-% \]
-% and the total kernel diagonal is the sum over source layers,
-% \begin{equation}\label{eq:phi-ii-sum}
-%   \Phi^{(\ell)}_{ii}\;=\;\sum_{r=1}^{\ell} C_{r\to\ell,i}\,.
-% \end{equation}
-% Under He init, properties (i)--(iii) make each $C_{r\to\ell,i}$ scale with the source-layer fan-in: $C_{1\to\ell,i}$ scales with the input dimension $d=\lVert\vA^{(0)}\rVert^2/O(1)$, while $C_{r\to\ell,i}$ for $r\ge 2$ scales with the hidden width $n$.  To leading order,
-% \begin{equation}\label{eq:phi-ii-scaling}
-%   \Phi^{(\ell)}_{ii}\;\propto\;d + (\ell-1)n\;\propto\;\rho + \ell - 1,
-%   \qquad \rho := d/n.
-% \end{equation}
-% The earlier $\Phi^{(\ell)}_{ii}\propto\ell$ approximation is the special case $\rho=1$, i.e.\ $d=n$.  Because our simulations hold $d=16$ fixed and vary $n$, the input contribution matters at every width tested.
-
-% Let $c_\ell := \rho+\ell-1$.  Treating $g_i := \partial\loss/\partial A_i^{(\ell)}$ as i.i.d.\ with variance independent of $\ell$, and pooling neurons uniformly over hidden layers $\ell=1,\dots,D$:
-% \begin{equation}\label{eq:r-derivation}
-%   r_{\mathrm{raw}}(D,\rho)
-%   \;\approx\;
-%   \frac{\mathbb{E}_\ell[c_\ell]}{\sqrt{\mathbb{E}_\ell[c_\ell^2]}}
-%   \;=\;
-%   \frac{\rho + (D-1)/2}{\sqrt{\rho^2 + \rho(D-1) + (D-1)(2D-1)/6}}.
-% \end{equation}
-% For $\rho=1$ this reduces to $\sqrt{3(D+1)/(2(2D+1))}\to\sqrt{3}/2$.  For fixed $d$ and $n\to\infty$ ($\rho\to 0$), the limit is depth-dependent: $r_{\mathrm{raw}}(D,0) = (D-1)/2\bigm/\sqrt{(D-1)(2D-1)/6}$, which gives $\sqrt{3/5}\approx 0.775$ at $D=3$ and tends to $\sqrt{3}/2$ as $D\to\infty$.  For the depth sweep with $\rho=d/n=0.5$, Eq.\,\ref{eq:r-derivation} sits between $\approx 0.89$ at $D=2$ and $\approx 0.87$ at $D=8$ -- nearly flat across this range because $\rho$ partially compensates the depth growth in $\Phi^{(\ell)}_{ii}$.
-
-% For the scaled correlation, the layer-dependent gain $\Phi^{(\ell)}_{ii}$ is included in the comparison target, so gain heterogeneity no longer penalizes the correlation; the leading-order prediction is $r_{\mathrm{scaled}}\approx 1$ regardless of $\rho$ or $D$.
-
-% \paragraph{Exact first-order target: the full kernel signal.}
-% Suppress the layer index and write the exact first-order prediction as
-% \[
-%   \vy \;:=\; \eta^{-1}\Delta\vA \;\approx\; \Phi\,\vh,
-%   \qquad \vh \;:=\; -\nabla_{\!\vA}\loss.
-% \]
-% The natural baseline target is $\Phi\vh$ itself: $r_{\mathrm{full}} := r(\vy,\Phi\vh)\approx 1$ at first order in $\eta$, modulo $O(\eta^2)$ Taylor error and ReLU kink crossings.  The raw and scaled correlations are lower-dimensional summaries of how well the cheaper targets $\vh$ and $D\vh$ approximate the full kernel signal, where $D := \mathrm{diag}(\Phi)$ and $R := \Phi-D$:
-% \[
-%   \vy \;=\; \Phi\vh \;=\; \underbrace{D\vh}_{\vs} \;+\; \underbrace{R\vh}_{\vu}.
-% \]
-% With $\Phi$ known per snapshot, all three correlations are directly computable; no diagonal-dominance approximation is needed.
-
-% \paragraph{Exact form of the scaled correlation.}
-% Working with centered inner products $\langle\vu,\vv\rangle_c=(P\vu)^{\!\top}(P\vv)$, $P=I-\tfrac{1}{n}\mathbf{1}\mathbf{1}^{\!\top}$,
-% \begin{equation}\label{eq:snr}
-%   r_{\mathrm{scaled}}
-%   \;=\;
-%   \frac{\lVert\vs\rVert^2 + \langle\vs,\vu\rangle}
-%   {\sqrt{\bigl(\lVert\vs\rVert^2 + 2\langle\vs,\vu\rangle + \lVert\vu\rVert^2\bigr)\,\lVert\vs\rVert^2}}
-%   \;=\;
-%   \frac{1+\kappa}{\sqrt{1+2\kappa+\Gamma^{-1}}}\,,
-% \end{equation}
-% with $\Gamma := \lVert\vs\rVert^2/\lVert\vu\rVert^2$ and $\kappa := \langle\vs,\vu\rangle/\lVert\vs\rVert^2$.  No diagonal-dominance assumption is needed; the only approximation is in dropping $\kappa$, giving the clean SNR form $r_{\mathrm{scaled}}\approx 1/\sqrt{1+\Gamma^{-1}}$ when the off-diagonal interference $\vu=R\vh$ is approximately uncorrelated with the diagonal signal $\vs=D\vh$.
-
-% \paragraph{Trace formulas under isotropic gradients.}
-% If $\vh$ is approximately isotropic in activity space ($\mathbb{E}[\vh\vh^{\!\top}]\propto I$) and independent of $\Phi$, then taking expectations over $\vh$ yields
-% \begin{equation}\label{eq:rraw-trace}
-%   r_{\mathrm{raw}}
-%   \;\approx\;
-%   \frac{\mathrm{tr}(\Phi)}{\sqrt{n\,\mathrm{tr}(\Phi^2)}}
-%   \;=\;
-%   \frac{1}{\sqrt{1+\mathrm{CV}(\lambda)^2}}\,,
-% \end{equation}
-% where $\lambda_i$ are the eigenvalues of $\Phi$ and $\mathrm{CV}(\lambda)$ their coefficient of variation, and
-% \begin{equation}\label{eq:rscaled-trace}
-%   r_{\mathrm{scaled}}
-%   \;\approx\;
-%   \sqrt{\frac{\mathrm{tr}(D^2)}{\mathrm{tr}(\Phi^2)}}
-%   \;=\;
-%   \frac{1}{\sqrt{1+\sum_{i\neq k}\Phi_{ik}^2\,\big/\,\sum_i\Phi_{ii}^2}}\,.
-% \end{equation}
-% The first is a \emph{spectral coefficient-of-variation} statement: $r_{\mathrm{raw}}$ is high when $\Phi$ has a narrow spectrum and falls when $\Phi$ amplifies some activity modes much more than others.  The second is a \emph{Frobenius diagonal-mass} statement: $r_{\mathrm{scaled}}$ is high when the squared diagonal entries dominate the squared off-diagonal entries.  Because $\mathrm{tr}(\Phi^2)=\mathrm{tr}(D^2)+\mathrm{tr}(R^2)$ and $\mathrm{tr}(\Phi)=\mathrm{tr}(D)$, the two combine multiplicatively:
-% \begin{equation}\label{eq:r-raw-snr}
-%   r_{\mathrm{raw}}
-%   \;\approx\;
-%   \underbrace{\frac{\mathrm{tr}(D)}{\sqrt{n\,\mathrm{tr}(D^2)}}}_{\text{gain-heterogeneity factor}}
-%   \;\cdot\;
-%   \underbrace{\sqrt{\frac{\mathrm{tr}(D^2)}{\mathrm{tr}(\Phi^2)}}}_{=\;\widehat r_{\mathrm{scaled}}}\,.
-% \end{equation}
-% The first factor is one when $\Phi^{(\ell)}_{ii}$ is uniform; the second is the off-diagonal SNR penalty.  In particular, in the isotropic-$\vh$ approximation $r_{\mathrm{raw}}\le r_{\mathrm{scaled}}$, with equality only when $\Phi$ has a uniform diagonal.
-
-% If instead $\mathbb{E}[\vh\vh^{\!\top}]=C_h$ is anisotropic, the trace formulas generalise to
-% \begin{equation}\label{eq:trace-Ch}
-%   r_{\mathrm{raw}}
-%   \;\approx\;
-%   \frac{\mathrm{tr}(\Phi C_h)}{\sqrt{\mathrm{tr}(C_h)\,\mathrm{tr}(\Phi^2 C_h)}}\,,
-%   \qquad
-%   r_{\mathrm{scaled}}
-%   \;\approx\;
-%   \frac{\mathrm{tr}(D\Phi C_h)}{\sqrt{\mathrm{tr}(D^2 C_h)\,\mathrm{tr}(\Phi^2 C_h)}}\,.
-% \end{equation}
-% These make explicit that the correlations depend on where $\vh$ lives relative to the eigenspaces of $\Phi$: if $\vh$ aligns with one eigenvector of $\Phi$, then $\Phi\vh\propto\vh$ and $r_{\mathrm{raw}}\approx 1$ even when $\Phi$ is far from diagonal.
-
-% \paragraph{Pooled across layers.}
-% When neurons from all hidden layers are concatenated, the relevant kernel is block-diagonal $\Phi_{\mathrm{pool}}=\mathrm{blockdiag}(\Phi^{(1)},\dots,\Phi^{(D)})$.  If $\mathbb{E}[\vh^{(\ell)}\vh^{(\ell)\top}]=S_\ell I$,
-% \begin{equation}\label{eq:pooled}
-%   r_{\mathrm{raw}}
-%   \approx
-%   \frac{\sum_\ell S_\ell\,\mathrm{tr}(\Phi^{(\ell)})}
-%   {\sqrt{\bigl(\sum_\ell S_\ell n_\ell\bigr)\bigl(\sum_\ell S_\ell\,\mathrm{tr}[(\Phi^{(\ell)})^2]\bigr)}}\,,
-%   \quad
-%   r_{\mathrm{scaled}}
-%   \approx
-%   \sqrt{\frac{\sum_\ell S_\ell\,\mathrm{tr}[(D^{(\ell)})^2]}{\sum_\ell S_\ell\,\mathrm{tr}[(\Phi^{(\ell)})^2]}}\,.
-% \end{equation}
-% Three effects separate cleanly: $S_\ell$ captures gradient-magnitude drift across layers; $\mathrm{tr}[(D^{(\ell)})^2]$ is the per-layer diagonal signal mass; $\mathrm{tr}[(\Phi^{(\ell)})^2]-\mathrm{tr}[(D^{(\ell)})^2]$ is the per-layer off-diagonal interference mass.  The leading-order calculation of Eq.\,\ref{eq:r-derivation} corresponds to $D^{(\ell)}=\mu_\ell I$, $R^{(\ell)}=0$, and $S_\ell$ constant, which collapses Eq.\,\ref{eq:pooled} to $r_{\mathrm{raw}}\approx \mathbb{E}_\ell[\mu_\ell]/\sqrt{\mathbb{E}_\ell[\mu_\ell^2]}$ and $r_{\mathrm{scaled}}\approx 1$.
-
-% \paragraph{Random-matrix baselines for $\Phi$.}
-% Eqs.\,\ref{eq:rraw-trace}--\ref{eq:rscaled-trace} hold for any $\Phi$; what changes between models is the spectrum.  Under standard parameterisations $\Phi=J_A J_A^{\!\top}$ becomes deterministic in the infinite-width limit (the NTK), but at finite width it is a random Gram matrix whose spectrum carries the off-diagonal mass.
-
-% \emph{Wishart null.}  If $J_A=(\tau/\sqrt{p})X$ with $X\in\mathbb{R}^{n\times p}$ having i.i.d.\ mean-zero unit-variance entries, then $\Phi$ is Wishart with aspect ratio $q=n/p$; its first two moments are $m_1=\tau^2$, $m_2=\tau^4(1+q)$, and the diagonal concentrates to $\frac{1}{n}\mathbb{E}\!\sum_i\Phi_{ii}^2\approx\tau^4$.  Eqs.\,\ref{eq:rraw-trace}--\ref{eq:rscaled-trace} then give
-% \[
-%   r_{\mathrm{raw}}\;\approx\;r_{\mathrm{scaled}}\;\approx\;\frac{1}{\sqrt{1+q}}\,.
-% \]
-% This is a useful sanity check: if the effective parameter dimension $p$ is much larger than the number of neurons $n$, both correlations should be close to one.  Empirically $r_{\mathrm{scaled}}\ll 1$ therefore indicates that the rows of $J_A$ are not independent isotropic vectors in parameter space -- they share structured upstream pathways through the recursion $\Phi^{(\ell)}=D_\ell+J_\ell\Phi^{(\ell-1)}J_\ell^{\!\top}$.
-
-% \emph{Recursive Wishart model.}  A more realistic null splits $\Phi^{(\ell)}$ into a private own-layer contribution and shared upstream contributions:
-% \[
-%   \Phi^{(\ell)} \;\approx\; a_{\ell,0}\,I \;+\; \sum_{r<\ell} a_{\ell,r}\,W_{\ell,r}\,,
-% \]
-% where each $W_{\ell,r}$ is approximately Wishart with aspect ratio $q_{\ell,r}$.  Then $m_{1,\ell}\approx a_{\ell,0}+\sum_{r<\ell}a_{\ell,r}$ and $m_{2,\ell}\approx m_{1,\ell}^2+\sum_{r<\ell}a_{\ell,r}^2 q_{\ell,r}$, so the off-diagonal Frobenius mass is $\sum_{r<\ell}a_{\ell,r}^2 q_{\ell,r}$ -- the spectral broadening grows with the number of propagated upstream contributions.  Large private own-layer mass keeps $r_{\mathrm{scaled}}\approx 1$; large shared upstream mass pushes it down.  Depth increases the number and importance of propagated terms, so $r_{\mathrm{scaled}}$ should fall with $D$.  Width helps only if it raises the private diagonal mass faster than the shared off-diagonal mass.  He initialisation controls $m_{1,\ell}$ (and hence the leading-order prediction Eq.\,\ref{eq:r-derivation}) but does not by itself force a narrow spectrum; away from dynamical isometry, the singular-value distribution of propagated Jacobians broadens with depth, inflating $m_{2,\ell}$ relative to $m_{1,\ell}^2$.
-
-% \paragraph{Diagnostic measurements.}
-% Per snapshot and layer, four quantities decompose the residual gap cleanly:
-% \begin{itemize}
-%     \setlength\itemsep{0pt}
-%   \item $r_{\mathrm{full}} = r(\Delta\vA,\Phi\vh)$ -- should be $\approx 1$ when the Taylor step is small and no ReLU kink crossings dominate;
-%   \item $r_{\mathrm{scaled}} = r(\Delta\vA, D\vh)$ -- measured scaled correlation;
-%   \item $\widehat r_{\mathrm{scaled}} = \sqrt{\mathrm{tr}(D^2)/\mathrm{tr}(\Phi^2)}$ -- trace prediction under isotropic $\vh$ (Eq.\,\ref{eq:rscaled-trace});
-%   \item $\widehat r_{\mathrm{raw}} = \mathrm{tr}(\Phi)/\sqrt{n\,\mathrm{tr}(\Phi^2)}$ -- trace prediction under isotropic $\vh$ (Eq.\,\ref{eq:rraw-trace}).
-% \end{itemize}
-% Agreement between measured and hatted predictions validates the isotropic-$\vh$ approximation; disagreement points to non-trivial alignment of $\vh$ with eigenspaces of $\Phi$, in which case the covariance-weighted forms in Eq.\,\ref{eq:trace-Ch} are the appropriate next step.
-
-% \begin{figure}[htbp]
-%   \floatconts
-%   {fig:depth-sweep}
-%   {\caption{\textbf{Depth sweep at fixed width ($n=32$, 10 seeds).} Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against network depth. Orange: raw gradient $-\partial \loss/\partial A$. Green: gradient scaled by $\Phi^{(\ell)}_{ii}$. Left panel averages the first 3 diagnostics (initialisation regime); right panel averages the last 5 diagnostics (after 2000 SGD steps). Dotted curves mark the leading-order predictions: $r_{\mathrm{raw}}(D,\rho{=}0.5)$ from Eq.\,\ref{eq:r-derivation} (orange; nearly flat near $0.87$--$0.89$ across this depth range because $\rho=d/n=16/32$) and $r_{\mathrm{scaled}}\approx 1$ (green).}}
-%   {\includegraphics[width=0.95\linewidth]{fig_depth_sweep}}
-% \end{figure}
-
-% \paragraph{Where the prediction holds and where it breaks.}
-% Fig.\,\ref{fig:depth-sweep} sweeps depth from 2 to 8 at fixed width $n=32$ ($\rho=0.5$).  Three things are visible:
-% \begin{enumerate}
-%     \setlength\itemsep{0pt}
-%   \item \emph{The raw prediction is close at small $D$ and diverges at large $D$.}  At $D=2$ the $\rho=0.5$ prediction is $\approx 0.89$ vs.\ empirical $\approx 0.86$ (gap $\approx 0.03$); at $D=8$ the prediction is still $\approx 0.87$ but the empirical raw curve has dropped to $\approx 0.63$ (gap $\approx 0.24$).  The leading-order calculation captures the small-depth value well but does not capture the depth-dependent loss in correlation.
-%   \item \emph{The scaled correlation also undershoots its prediction, more sharply with depth.}  $r_{\mathrm{scaled}}$ runs from $\approx 0.95$ at $D=2$ down to $\approx 0.73$ at $D=8$, even though the leading-order prediction is $r_{\mathrm{scaled}}\approx 1$ at every depth.
-%   \item \emph{Init and trained behave nearly identically.}  The left and right panels are within noise of each other, so the depth-dependence is a property of the initialisation regime itself, not a consequence of training.
-% \end{enumerate}
-% The trace decomposition (Eqs.\,\ref{eq:rraw-trace}--\ref{eq:pooled}) places both gaps in a unified framework.  The drop in $r_{\mathrm{scaled}}$ with depth reflects off-diagonal Frobenius mass growing relative to diagonal: $\sum_{i\neq k}\Phi^{(\ell)2}_{ik}/\sum_i\Phi^{(\ell)2}_{ii}$ rises through the propagated Wishart-like contributions $W_{\ell,r}$ generated by the recursion $\Phi^{(\ell)}=D_\ell + J_\ell\Phi^{(\ell-1)}J_\ell^{\!\top}$, exactly as the recursive Wishart model predicts.  This is the only first-order source of $r_{\mathrm{scaled}}<1$.  The further gap in $r_{\mathrm{raw}}$ comes from the gain-heterogeneity factor $\mathrm{tr}(D)/\sqrt{n\,\mathrm{tr}(D^2)}$ in Eq.\,\ref{eq:r-raw-snr}: layers contribute very different mean diagonals (Eq.\,\ref{eq:phi-ii-scaling}) and within each layer there is finite-width scatter in $\Phi^{(\ell)}_{ii}$, both of which inflate $\mathrm{tr}(D^2)$ relative to $\mathrm{tr}(D)^2/n$.  Any residual mismatch between the measured correlations and the isotropic-$\vh$ trace predictions $\widehat r_{\mathrm{raw}},\widehat r_{\mathrm{scaled}}$ indicates non-trivial alignment of the backpropagated $\vh$ with eigenspaces of $\Phi$, in which case the covariance-weighted forms (Eq.\,\ref{eq:trace-Ch}) are the right next step.
-
-% \paragraph{Implication.}
-% Eq.\,\ref{eq:r-derivation} is the leading-order wide-network prediction for the raw correlation, parameterised by $\rho=d/n$ and $D$.  The simpler $\sqrt{3(D+1)/(2(2D+1))}\to\sqrt{3}/2$ formula is its $\rho=1$ (equal input and hidden width) special case; it should not be applied at $\rho\ne 1$.  The scaled-gradient comparison has the cleaner leading-order prediction $r_{\mathrm{scaled}}\approx 1$, independent of $\rho$ and $D$; its deviation isolates the off-diagonal kernel contribution.  The interactive demo allows the reader to verify both panels of Fig.\,\ref{fig:depth-sweep} live.
-
-% \paragraph{Width sweep at fixed depth.}
-% The complementary experiment holds depth at $D=3$ and varies width $n\in\{4,\dots,128\}$, so $\rho=d/n=16/n$ varies from $4$ down to $1/8$.  Eq.\,\ref{eq:r-derivation} at $D=3$ becomes
-% \[
-%   r_{\mathrm{raw}}(3,\rho) = \frac{\rho+1}{\sqrt{\rho^2+2\rho+5/3}},
-% \]
-% which falls from $\approx 0.99$ at $n=4$ to $\sqrt{3/5}\approx 0.775$ as $n\to\infty$ at fixed $d$.  This is the appropriate baseline for the width sweep -- the often-quoted $\sqrt{6/7}\approx 0.926$ would only apply at $d=n$, which is realised only at $n=16$ in this sweep.
-
-% \begin{figure}[htbp]
-%   \floatconts
-%   {fig:width-sweep-appendix}
-%   {\caption{\textbf{Width sweep at fixed depth ($D=3$, 10 seeds).} Pearson $r$ between actual $\Delta\vA$ and the gradient signal, plotted against hidden-layer width $n$ on a log scale. Orange: raw gradient $-\partial \loss/\partial A$. Green: gradient scaled by $\Phi^{(\ell)}_{ii}$. Left: averages over the first 3 diagnostics (initialisation regime). Right: averages over the last 5 diagnostics (after 1500 SGD steps). Dotted curves mark the leading-order predictions: $r_{\mathrm{raw}}(3,d/n)$ from Eq.\,\ref{eq:r-derivation} (orange; descending to $\sqrt{3/5}\approx 0.775$ at large $n$) and $r_{\mathrm{scaled}}\approx 1$ (green).}}
-%   {\includegraphics[width=0.95\linewidth]{fig_width_sweep_appendix}}
-% \end{figure}
-
-% Three features of Fig.\,\ref{fig:width-sweep-appendix} are notable:
-% \begin{enumerate}
-%     \setlength\itemsep{0pt}
-%   \item \emph{Narrow networks are noisy.}  At $n=4$, the raw correlation drops to $\approx 0.65$ with a large across-seed band; the wide-Gaussian assumptions underlying Eq.\,\ref{eq:phi-ii-sum} are visibly violated and the predicted $\approx 0.99$ is not reached.
-%   \item \emph{The raw correlation tracks the $\rho=d/n$ prediction at moderate-to-large width.}  For $n\gtrsim 32$ the empirical $r_{\mathrm{raw}}$ sits in $0.80$--$0.85$, close to the $\rho$-corrected leading-order curve, which descends from $\approx 0.88$ at $n=32$ to $\approx 0.81$ at $n=128$ and tends to $\sqrt{3/5}\approx 0.775$.  The plateau is not mysterious: it is the predicted wide-width limit at fixed input dimension.
-%   \item \emph{The scaled correlation approaches $1$ as width grows.}  For $n\ge 32$ the scaled $r$ sits in $0.95$--$0.97$, in line with $r_{\mathrm{scaled}}\approx 1$.  The within-layer scatter of $\Phi^{(\ell)}_{ii}$ does not depress $r_{\mathrm{scaled}}$ at first order; the residual gap is the off-diagonal kernel contribution, which is small at $D=3$.
-% \end{enumerate}
-% Init and trained panels track each other within noise, again indicating that the regime is set at initialisation.  Together with Fig.\,\ref{fig:depth-sweep}, this isolates the operative mechanisms: width controls the off-diagonal contribution (and hence the gap between $r_{\mathrm{scaled}}$ and $1$), while depth controls both the off-diagonal growth and the cross-layer-gradient correlations that further depress $r_{\mathrm{raw}}$.
-
-\section{Annotated layer-2 decomposition}
-
-To make the diagonal/off-diagonal split concrete, consider a standard layer-2 block (omitting biases for simplicity):
+Consider a fully connected sequential network, initially omitting biases for clarity:
 \[
-  z_i^{(2)} = \sum_m W_{im}^{(2)} A_m^{(1)},
+  z_i^{(\ell)}
+  = \sum_{m\in\mathcal N_{\ell-1}} W_{im}^{(\ell)}A_m^{(\ell-1)},
   \qquad
-  A_i^{(2)} = \sigma_2\!\bigl(z_i^{(2)}\bigr).
+  A_i^{(\ell)}=\sigma_\ell\!\bigl(z_i^{(\ell)}\bigr).
 \]
-The first-order activity update is
+Here $i,j,p\in\mathcal N_\ell$ index neurons in layer~$\ell$, while $m,n\in\mathcal N_{\ell-1}$ index neurons in the preceding layer.
+Define the inter-layer Jacobian and the kernel contribution from layer~$\ell$'s own weights by
 \[
-  \Delta A_i^{(2)}
-  \approx
-  -\eta \sum_j \Phi_{ij}^{(2)} \frac{\partial \loss}{\partial A_j^{(2)}}.
-\]
-The point of this appendix is to show explicitly where the self term $\Phi_{ii}^{(2)}$ and the cross terms $\Phi_{ij}^{(2)}$ for $j\neq i$ come from.
-
-\paragraph{Own-layer weights contribute only to the diagonal.}
-For a weight $W_{pm}^{(2)}$ feeding directly into layer~2,
-\[
-  \frac{\partial A_i^{(2)}}{\partial W_{pm}^{(2)}}
-  =
-  \delta_{ip}\,\sigma_2'\!\bigl(z_i^{(2)}\bigr)\,A_m^{(1)}.
-\]
-Therefore the layer-2 contribution to the kernel is
-\[
-  \sum_{p,m}
-  \frac{\partial A_i^{(2)}}{\partial W_{pm}^{(2)}}
-  \frac{\partial A_j^{(2)}}{\partial W_{pm}^{(2)}}
-  =
-  \delta_{ij}\,[\sigma_2'\!\bigl(z_i^{(2)}\bigr)]^2\,\lVert \vA^{(1)} \rVert^2
-  =
-  \delta_{ij} D_{2,ii}.
-\]
-This term is diagonal because two different neurons in the same layer do not share their own incoming weights.
-
-\paragraph{Earlier-layer weights are propagated forward by the Jacobian.}
-Now take a weight $W_\alpha$ with $\alpha\in\mathcal P_1$.  By the chain rule,
-\[
-  \frac{\partial A_i^{(2)}}{\partial W_\alpha}
-  =
-  \sum_m
-  \frac{\partial A_i^{(2)}}{\partial A_m^{(1)}}
-  \frac{\partial A_m^{(1)}}{\partial W_\alpha}
-  =
-  \sum_m J_{2,im}
-  \frac{\partial A_m^{(1)}}{\partial W_\alpha},
+  J_{\ell,im}
+  := \frac{\partial A_i^{(\ell)}}{\partial A_m^{(\ell-1)}}
+  = \sigma_\ell'\!\bigl(z_i^{(\ell)}\bigr)W_{im}^{(\ell)},
   \qquad
-  J_{2,im} = \frac{\partial A_i^{(2)}}{\partial A_m^{(1)}}.
+  D_{\ell,ij}
+  := \delta_{ij}\,[\sigma_\ell'\!\bigl(z_i^{(\ell)}\bigr)]^2
+  \lVert\vA^{(\ell-1)}\rVert^2.
 \]
-Summing over all layer-1 weights gives
-\[
-  \sum_{\alpha\in\mathcal P_1}
-  \frac{\partial A_i^{(2)}}{\partial W_\alpha}
-  \frac{\partial A_j^{(2)}}{\partial W_\alpha}
-  =
-  \sum_{m,n} J_{2,im}\,\Phi_{mn}^{(1)}\,J_{2,jn}.
-\]
-Because layer~1 has no earlier shared weights, $\Phi^{(1)} = D_1$ is diagonal, so this reduces to
-\[
-  \sum_{m,n} J_{2,im}\,\Phi_{mn}^{(1)}\,J_{2,jn}
-  =
-  \sum_m J_{2,im}\,D_{1,mm}\,J_{2,jm}.
-\]
-Thus the full layer-2 kernel is
-\[
-  \Phi_{ij}^{(2)}
-  =
-  \delta_{ij} D_{2,ii}
-  +
-  \sum_m J_{2,im}\,D_{1,mm}\,J_{2,jm}.
-\]
-If one writes the Jacobian explicitly,
-\[
-  J_{2,im} = \sigma_2'\!\bigl(z_i^{(2)}\bigr) W_{im}^{(2)},
-\]
-so
-\[
-  \Phi_{ij}^{(2)}
-  =
-  \delta_{ij} [\sigma_2'\!\bigl(z_i^{(2)}\bigr)]^2 \lVert \vA^{(1)} \rVert^2
-  +
-  \sigma_2'\!\bigl(z_i^{(2)}\bigr)\,\sigma_2'\!\bigl(z_j^{(2)}\bigr)
-  \sum_m W_{im}^{(2)} D_{1,mm} W_{jm}^{(2)}.
-\]
+The matrix $D_\ell$ is diagonal because different neurons in a fully connected layer have disjoint incoming weight parameters.
+With trainable biases, as in the experiments, $\lVert\vA^{(\ell-1)}\rVert^2$ is replaced by $\lVert\vA^{(\ell-1)}\rVert^2+1$; the contribution remains diagonal.
 
-\paragraph{Self and cross terms in the activity update.}
-Substituting the layer-2 kernel into the first-order update and separating the $j=i$ and $j\neq i$ pieces gives
-\[
-  \Delta A_i^{(2)}
-  \approx
-  -\eta \,\Phi_{ii}^{(2)}\,\frac{\partial \loss}{\partial A_i^{(2)}}
-  -
-  \eta \sum_{j\neq i} \Phi_{ij}^{(2)}\,\frac{\partial \loss}{\partial A_j^{(2)}}.
-\]
-Using the expression above,
-\[
-  \Phi_{ii}^{(2)}
-  =
-  D_{2,ii}
-  +
-  \sum_m J_{2,im}^2 D_{1,mm},
-\]
-while for $j\neq i$,
-\[
-  \Phi_{ij}^{(2)}
-  =
-  \sum_m J_{2,im} D_{1,mm} J_{2,jm}.
-\]
-Hence
-\[
-  \Delta A_i^{(2)}
-  \approx
-  -\eta \Bigl(D_{2,ii} + \sum_m J_{2,im}^2 D_{1,mm}\Bigr) \frac{\partial \loss}{\partial A_i^{(2)}}
-  -
-  \eta \sum_{j\neq i}
-  \Bigl(\sum_m J_{2,im} D_{1,mm} J_{2,jm}\Bigr)
-  \frac{\partial \loss}{\partial A_j^{(2)}}.
-\]
-The first bracket is the self term: it is always aligned with $-\partial \loss/\partial A_i^{(2)}$.  The second sum is the interference term: it mixes neuron $i$ with the gradients of other neurons in the same layer through shared earlier-layer parameters.
-
-\paragraph{Relation to the temporary $x_0/x_1$ notation.}
-If one writes $x_0 = \vA^{(0)}$ and $x_1 = \vA^{(1)}$, then
-\[
-  D_{1,mm} = [\sigma_1'\!\bigl(z_m^{(1)}\bigr)]^2 \lVert x_0 \rVert^2,
-  \qquad
-  D_{2,ii} = [\sigma_2'\!\bigl(z_i^{(2)}\bigr)]^2 \lVert x_1 \rVert^2.
-\]
-So the appearance of both $x_0$ and $x_1$ in scratch work is meaningful, not a typo: they are simply the activities entering layers~1 and~2.  In the main text, $\vA^{(0)}$ and $\vA^{(1)}$ are cleaner and more consistent with the rest of the notation.
-
-\section{General recursion for deeper networks and nonlinearities}
-
-For an arbitrary depth-$L$ feedforward network with pointwise nonlinearities,
-\[
-  z_i^{(\ell)} = \sum_m W_{im}^{(\ell)} A_m^{(\ell-1)},
-  \qquad
-  A_i^{(\ell)} = \sigma_\ell\!\bigl(z_i^{(\ell)}\bigr),
-  \qquad \ell = 1,\dots,L,
-\]
-again omitting biases for simplicity.  The first-order kernel relation from the main text still holds:
-\[
-  \Delta \vA^{(\ell)} \approx -\eta\,\Phi^{(\ell)}\,\nabla_{\!\vA^{(\ell)}} \loss,
-  \qquad
-  \Phi_{ij}^{(\ell)} = \sum_{\alpha\in\mathcal P_{\leq\ell}}
-  \frac{\partial A_i^{(\ell)}}{\partial W_\alpha}
-  \frac{\partial A_j^{(\ell)}}{\partial W_\alpha}.
-\]
-To obtain a recursion, split the weight sum into layer $\ell$ itself and layers $1,\dots,\ell-1$.
-
-\paragraph{Own-layer contribution.}
-For a weight $W_{pm}^{(\ell)}$ in layer~$\ell$,
-\[
-  \frac{\partial A_i^{(\ell)}}{\partial W_{pm}^{(\ell)}}
-  =
-  \delta_{ip}\,\sigma_\ell'\!\bigl(z_i^{(\ell)}\bigr)\,A_m^{(\ell-1)}.
-\]
-Therefore the own-layer contribution is diagonal:
-\[
-  \sum_{p,m}
-  \frac{\partial A_i^{(\ell)}}{\partial W_{pm}^{(\ell)}}
-  \frac{\partial A_j^{(\ell)}}{\partial W_{pm}^{(\ell)}}
-  =
-  \delta_{ij}[\sigma_\ell'\!\bigl(z_i^{(\ell)}\bigr)]^2 \lVert \vA^{(\ell-1)} \rVert^2
-  =
-  \delta_{ij} D_{\ell,ii}.
-\]
-
-\paragraph{Earlier-layer contribution.}
-Define the inter-layer Jacobian
-\[
-  J_{\ell,im} = \frac{\partial A_i^{(\ell)}}{\partial A_m^{(\ell-1)}}
-  =
-  \sigma_\ell'\!\bigl(z_i^{(\ell)}\bigr) W_{im}^{(\ell)}.
-\]
-Then for any weight $W_\alpha$ with $\alpha\in\mathcal P_{\leq\ell-1}$,
+For an earlier weight $W_\alpha$ with $\alpha\in\mathcal P_{\leq\ell-1}$, the chain rule gives
 \[
   \frac{\partial A_i^{(\ell)}}{\partial W_\alpha}
-  =
-  \sum_m J_{\ell,im}\,\frac{\partial A_m^{(\ell-1)}}{\partial W_\alpha}.
+  = \sum_{m\in\mathcal N_{\ell-1}}
+  J_{\ell,im}\,
+  \frac{\partial A_m^{(\ell-1)}}{\partial W_\alpha}.
 \]
-Summing over earlier-layer weights gives
-\[
-  \sum_{\alpha\in\mathcal P_{\leq\ell-1}}
-  \frac{\partial A_i^{(\ell)}}{\partial W_\alpha}
-  \frac{\partial A_j^{(\ell)}}{\partial W_\alpha}
-  =
-  \sum_{m,n} J_{\ell,im}\,\Phi_{mn}^{(\ell-1)}\,J_{\ell,jn}.
-\]
-Combining both pieces yields the recursion
-\[
-  \Phi^{(\ell)} = D_\ell + J_\ell \,\Phi^{(\ell-1)}\, J_\ell^T,
+Splitting the kernel sum into the current layer and all earlier layers therefore yields
+\begin{equation}\label{eq:phi-recursion-app}
+  \Phi^{(\ell)}
+  = D_\ell + J_\ell\Phi^{(\ell-1)}J_\ell^\top,
   \qquad
-  \Phi^{(1)} = D_1.
+  \Phi^{(1)}=D_1.
+\end{equation}
+If
+\[
+  J_{\ell\leftarrow r}
+  := J_\ell J_{\ell-1}\cdots J_{r+1},
+  \qquad
+  J_{\ell\leftarrow\ell}:=I,
 \]
-This is the desired recursion in expanded form.
-
-\paragraph{Unrolling the recursion.}
-Repeated substitution shows that every earlier layer contributes a positive-semidefinite term transported forward by the intermediate Jacobians:
+then unrolling Equation~\eqref{eq:phi-recursion-app} gives the compact decomposition
 \[
   \Phi^{(\ell)}
-  =
-  D_\ell
-  + J_\ell D_{\ell-1} J_\ell^T
-  + J_\ell J_{\ell-1} D_{\ell-2} J_{\ell-1}^T J_\ell^T
-  + \cdots
-  + J_\ell J_{\ell-1} \cdots J_2\, D_1\, J_2^T \cdots J_{\ell-1}^T J_\ell^T.
+  = \sum_{r=1}^{\ell}
+  J_{\ell\leftarrow r}\,D_r\,J_{\ell\leftarrow r}^{\top}.
 \]
-This makes the structure transparent: $D_r$ captures the direct effect of layer-$r$ weights on layer-$r$ activities, and the surrounding Jacobians propagate that contribution forward to layer~$\ell$.
+Every summand is positive semidefinite.
+The direct term $D_\ell$ is diagonal, whereas the transported terms can contain off-diagonal entries because different neurons in layer~$\ell$ depend on shared earlier-layer parameters.
 
-\paragraph{Role of nonlinearities.}
-Nothing in the kernel definition or recursion requires linear hidden units.  For smooth nonlinearities such as sigmoid, tanh, or GELU, the algebraic derivation above holds with the corresponding $\sigma_\ell'$; the overall $\Delta\vA\approx-\eta\Phi\nabla_{\!\vA}\loss$ remains a first-order approximation in~$\eta$.  For piecewise-linear nonlinearities such as ReLU or leaky ReLU, the same formulas hold almost everywhere; at kink points one may use a subgradient.  In particular, if a ReLU unit is inactive on the sampled input, then $\sigma_\ell'\!\bigl(z_i^{(\ell)}\bigr)=0$, so its row of $J_\ell$ and its diagonal entry in $D_\ell$ vanish.
-
-\paragraph{More general feedforward modules.}
-The recursion above assumes an affine layer followed by a pointwise nonlinearity.  The kernel definition
+For example, at layer~2,
 \[
-  \Phi_{ij}^{(\ell)} = \sum_{\alpha\in\mathcal P_{\leq\ell}}
-  \frac{\partial A_i^{(\ell)}}{\partial W_\alpha}
-  \frac{\partial A_j^{(\ell)}}{\partial W_\alpha}
+  \Phi_{ii}^{(2)}
+  = D_{2,ii}+\sum_m J_{2,im}^2D_{1,mm},
+  \qquad
+  \Phi_{ij}^{(2)}
+  = \sum_m J_{2,im}D_{1,mm}J_{2,jm}
+  \quad (j\neq i).
 \]
-and the first-order relation $\Delta\vA^{(\ell)}\approx-\eta\,\Phi^{(\ell)}\nabla_{\!\vA^{(\ell)}}\loss$ still hold for any differentiable sequential feedforward architecture (i.e.\ one without skip connections).  For other modules the same logic applies: there is an own-module contribution from parameters in layer~$\ell$ and a propagated earlier-layer contribution obtained by sandwiching $\Phi^{(\ell-1)}$ between the appropriate Jacobians.  Only the explicit forms of $D_\ell$ and $J_\ell$ change.
+Writing $g_j^{(2)}:=\partial\loss/\partial A_j^{(2)}$, the corresponding activity update separates into
+\begin{equation}\label{eq:self-cross-app}
+  \Delta A_i^{(2)}
+  \approx
+  -\eta\,\Phi_{ii}^{(2)}g_i^{(2)}
+  -\eta\sum_{j\neq i}\Phi_{ij}^{(2)}g_j^{(2)}.
+\end{equation}
+Because $\Phi_{ii}^{(2)}\geq0$, the first term is aligned with neuron $i$'s negative loss gradient.
+The second term mixes gradients from other neurons through their shared upstream parameter dependence and is the source of cross-neuron interference.
+
+For smooth pointwise nonlinearities, the recursion is the usual first-order expansion in~$\eta$.
+For ReLU and other piecewise-linear nonlinearities, it holds away from kinks and for finite updates that remain within the same activation region.
+If an update crosses a kink, the activation-status change contributes approximation error that is not generally resolved by choosing an arbitrary subgradient.
+
+Finally, diagonality of $D_\ell$ relies on the unshared incoming parameters of a fully connected layer.
+For a differentiable sequential module with parameter sharing, such as a convolution, let $K_\ell^{\mathrm{own}}$ denote the kernel contribution from that module's own parameters; it need not be diagonal.
+The recursion generalises to
+\[
+  \Phi^{(\ell)}
+  = K_\ell^{\mathrm{own}}
+  + J_\ell\Phi^{(\ell-1)}J_\ell^\top.
+\]
+The kernel definition and first-order activity-update relation remain valid for differentiable sequential architectures without paths that bypass layer~$\ell$.
 
 \end{document}
