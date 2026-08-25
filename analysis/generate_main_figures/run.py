@@ -1010,13 +1010,13 @@ median_raw_corr_mean = np.array(
     [np.mean(width_raw_corr_median[width_value]) for width_value in widths]
 )
 median_raw_corr_std = np.array(
-    [np.std(width_raw_corr_median[width_value]) for width_value in widths]
+    [np.std(width_raw_corr_median[width_value], ddof=1) for width_value in widths]
 )
 median_diag_corr_mean = np.array(
     [np.mean(width_diag_corr_median[width_value]) for width_value in widths]
 )
 median_diag_corr_std = np.array(
-    [np.std(width_diag_corr_median[width_value]) for width_value in widths]
+    [np.std(width_diag_corr_median[width_value], ddof=1) for width_value in widths]
 )
 
 # ======================== DEPTH SWEEP ========================
@@ -1063,17 +1063,17 @@ for d in depths:
 
 d_arr = np.array(depths)
 neg_init_mean = np.array([np.mean(depth_neg_init[d]) for d in depths])
-neg_init_std = np.array([np.std(depth_neg_init[d]) for d in depths])
+neg_init_std = np.array([np.std(depth_neg_init[d], ddof=1) for d in depths])
 diag_init_mean = np.array([np.mean(depth_diag_init[d]) for d in depths])
-diag_init_std = np.array([np.std(depth_diag_init[d]) for d in depths])
+diag_init_std = np.array([np.std(depth_diag_init[d], ddof=1) for d in depths])
 neg_late_mean = np.array([np.mean(depth_neg_late[d]) for d in depths])
-neg_late_std = np.array([np.std(depth_neg_late[d]) for d in depths])
+neg_late_std = np.array([np.std(depth_neg_late[d], ddof=1) for d in depths])
 neg_median_mean = np.array([np.mean(depth_neg_median[d]) for d in depths])
-neg_median_std = np.array([np.std(depth_neg_median[d]) for d in depths])
+neg_median_std = np.array([np.std(depth_neg_median[d], ddof=1) for d in depths])
 diag_late_mean = np.array([np.mean(depth_diag_late[d]) for d in depths])
-diag_late_std = np.array([np.std(depth_diag_late[d]) for d in depths])
+diag_late_std = np.array([np.std(depth_diag_late[d], ddof=1) for d in depths])
 diag_median_mean = np.array([np.mean(depth_diag_median[d]) for d in depths])
-diag_median_std = np.array([np.std(depth_diag_median[d]) for d in depths])
+diag_median_std = np.array([np.std(depth_diag_median[d], ddof=1) for d in depths])
 
 # Figure 2 compares median raw-gradient and diagonal-approximation correlations
 # for a width sweep at fixed depth and a depth sweep at fixed width.
@@ -1475,13 +1475,21 @@ for w in appendix_widths:
 
 w_arr = np.array(appendix_widths)
 w_neg_init_mean = np.array([np.mean(width_neg_init[w]) for w in appendix_widths])
-w_neg_init_std = np.array([np.std(width_neg_init[w]) for w in appendix_widths])
+w_neg_init_std = np.array(
+    [np.std(width_neg_init[w], ddof=1) for w in appendix_widths]
+)
 w_diag_init_mean = np.array([np.mean(width_diag_init[w]) for w in appendix_widths])
-w_diag_init_std = np.array([np.std(width_diag_init[w]) for w in appendix_widths])
+w_diag_init_std = np.array(
+    [np.std(width_diag_init[w], ddof=1) for w in appendix_widths]
+)
 w_neg_late_mean = np.array([np.mean(width_neg_late[w]) for w in appendix_widths])
-w_neg_late_std = np.array([np.std(width_neg_late[w]) for w in appendix_widths])
+w_neg_late_std = np.array(
+    [np.std(width_neg_late[w], ddof=1) for w in appendix_widths]
+)
 w_diag_late_mean = np.array([np.mean(width_diag_late[w]) for w in appendix_widths])
-w_diag_late_std = np.array([np.std(width_diag_late[w]) for w in appendix_widths])
+w_diag_late_std = np.array(
+    [np.std(width_diag_late[w], ddof=1) for w in appendix_widths]
+)
 
 # Leading-order prediction for the raw correlation at fixed depth D=3:
 #   Phi_ii^(ell) ~ d + (ell-1)*n  (own-layer contribution is O(d) at layer 1,
