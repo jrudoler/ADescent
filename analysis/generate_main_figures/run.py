@@ -15,18 +15,21 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-np.random.seed(42)
+CORRELATION_Y_LIMITS = (0.5, 1.05)
+CORRELATION_Y_TICKS = (0.6, 0.8, 1.0)
 
 # ======================== NETWORK ========================
 
 
-def create_network(layer_sizes):
+def create_network(layer_sizes, rng):
     weight_matrices = []
     for layer_index in range(len(layer_sizes) - 1):
         # Extra column for bias (input augmented with 1)
         scale = np.sqrt(2.0 / layer_sizes[layer_index])
         layer_weights = (
-            np.random.randn(layer_sizes[layer_index + 1], layer_sizes[layer_index] + 1)
+            rng.standard_normal(
+                (layer_sizes[layer_index + 1], layer_sizes[layer_index] + 1)
+            )
             * scale
         )
         layer_weights[:, -1] = 0  # init biases to zero
@@ -80,22 +83,22 @@ def backprop(
     return loss_gradient_by_activity, loss_gradient_by_weights
 
 
-def make_bar_images(n_per_class=20, noise=0.15):
+def make_bar_images(rng, n_per_class=20, noise=0.15):
     input_examples, target_vectors = [], []
     for _ in range(n_per_class):
         # Horizontal bar: random row bright
         horizontal_image = np.zeros(16)
-        row = np.random.randint(4)
+        row = rng.integers(4)
         horizontal_image[row * 4 : (row + 1) * 4] = 1.0
-        horizontal_image += np.random.randn(16) * noise
+        horizontal_image += rng.standard_normal(16) * noise
         input_examples.append(horizontal_image)
         target_vectors.append([1, 0])
         # Vertical bar: random column bright
         vertical_image = np.zeros(16)
-        col = np.random.randint(4)
+        col = rng.integers(4)
         for r in range(4):
             vertical_image[r * 4 + col] = 1.0
-        vertical_image += np.random.randn(16) * noise
+        vertical_image += rng.standard_normal(16) * noise
         input_examples.append(vertical_image)
         target_vectors.append([0, 1])
     return np.array(input_examples), np.array(target_vectors)
@@ -435,6 +438,9 @@ def run_experiment(
     n_steps=2000,
     diag_every=50,
     full_jacobian=True,
+    network_seed=0,
+    data_seed=1,
+    sampling_seed=2,
 ):
     """
     Train one random MLP with online SGD and periodically compare the observed
@@ -452,9 +458,13 @@ def run_experiment(
       corr_diagonal: r(actual ΔA, diagonal Eq. 5)
       corr_raw_gradient: r(actual ΔA, raw -dℒ/dA)
     """
+    network_rng = np.random.default_rng(network_seed)
+    data_rng = np.random.default_rng(data_seed)
+    sampling_rng = np.random.default_rng(sampling_seed)
+
     layer_sizes = [16] + [width] * depth + [2]
-    weight_matrices = create_network(layer_sizes)
-    training_inputs, training_targets = make_bar_images(20)
+    weight_matrices = create_network(layer_sizes, network_rng)
+    training_inputs, training_targets = make_bar_images(data_rng, n_per_class=20)
     num_examples = len(training_inputs)
 
     history = {
@@ -468,7 +478,7 @@ def run_experiment(
     latest_snapshot = None
 
     for step in range(n_steps):
-        sampled_example_index = np.random.randint(num_examples)
+        sampled_example_index = sampling_rng.integers(num_examples)
         activities_by_layer, pre_activations_by_layer = forward(
             weight_matrices, training_inputs[sampled_example_index]
         )
@@ -746,15 +756,21 @@ def plot_scatter(
 
 def plot_dynamics(ax, history, show_loss_label=True, show_legend=True):
     diagnostic_steps = history["step"]
-    # The dynamics panel tracks the diagonal-approximation metric directly:
-    # corr_diagonal = r(actual ΔA, Eq. 5 prediction).
+    ax.plot(
+        diagnostic_steps,
+        history["corr_raw_gradient"],
+        "-",
+        color="#d97706",
+        linewidth=1.2,
+        label="raw gradient",
+    )
     ax.plot(
         diagnostic_steps,
         history["corr_diagonal"],
         "-",
-        color="#d97706",
+        color="#2563eb",
         linewidth=1.2,
-        label=r"$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A_i)$",
+        label="diagonal approximation",
     )
 
     ax2 = ax.twinx()
@@ -775,12 +791,13 @@ def plot_dynamics(ax, history, show_loss_label=True, show_legend=True):
 
     ax.axhline(1, color="#e8e5dd", linestyle="--", linewidth=0.5)
     ax.axhline(0, color="#e8e5dd", linewidth=0.5)
-    ax.set_ylim(-0.5, 1.1)
+    ax.set_ylim(*CORRELATION_Y_LIMITS)
+    ax.set_yticks(CORRELATION_Y_TICKS)
     ax.set_xlabel("SGD step", fontsize=7)
     ax.set_ylabel(r"$r$", fontsize=7)
     ax.tick_params(labelsize=6)
     if show_legend:
-        ax.legend(fontsize=5.5, loc="lower left", framealpha=0.8)
+        ax.legend(fontsize=5.0, loc="center right", framealpha=0.9)
 
 
 # ======================== MAIN ========================
@@ -801,12 +818,26 @@ os.chdir(output_dir)
 
 print("Running width=8 experiment...")
 history_width_8, snapshot_width_8, _ = run_experiment(
-    width=8, depth=3, eta=0.005, n_steps=3000, diag_every=30
+    width=8,
+    depth=3,
+    eta=0.005,
+    n_steps=3000,
+    diag_every=30,
+    network_seed=100,
+    data_seed=200,
+    sampling_seed=300,
 )
 
 print("Running width=48 experiment...")
 history_width_48, snapshot_width_48, _ = run_experiment(
-    width=48, depth=3, eta=0.005, n_steps=3000, diag_every=30
+    width=48,
+    depth=3,
+    eta=0.005,
+    n_steps=3000,
+    diag_every=30,
+    network_seed=100,
+    data_seed=200,
+    sampling_seed=300,
 )
 
 # ---- FIGURE: 2-row comparison ----
@@ -945,19 +976,18 @@ print("Figure 1 saved.")
 # ======================== WIDTH SWEEP ========================
 
 widths = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]
-n_seeds = 3
+n_seeds = 10
 n_steps_sweep = 2000
 diag_every_sweep = 40
 
-# For each width, collect summary statistics of the diagonal-approximation
-# correlation over training.
-width_diagonal_corr_median = {width_value: [] for width_value in widths}
-width_diagonal_corr_final = {width_value: [] for width_value in widths}
+# For each width, collect the median raw-gradient and diagonal-approximation
+# correlations over diagnostic snapshots.
+width_raw_corr_median = {width_value: [] for width_value in widths}
+width_diag_corr_median = {width_value: [] for width_value in widths}
 
 for width_value in widths:
     print(f"  Width sweep: w={width_value} ...", flush=True)
     for seed in range(n_seeds):
-        np.random.seed(1000 + seed * 100 + width_value)
         history, _, _ = run_experiment(
             width=width_value,
             depth=3,
@@ -965,28 +995,28 @@ for width_value in widths:
             n_steps=n_steps_sweep,
             diag_every=diag_every_sweep,
             full_jacobian=False,
+            network_seed=1000 + seed,
+            data_seed=2000 + seed,
+            sampling_seed=3000 + seed,
         )
-        # If the diagonal approximation itself improves with width, this is the
-        # directly relevant metric to inspect.
-        diagonal_corr_values = history["corr_diagonal"]
-        width_diagonal_corr_median[width_value].append(np.median(diagonal_corr_values))
-        width_diagonal_corr_final[width_value].append(
-            np.mean(diagonal_corr_values[-5:])
-        )
+        raw_corr_values = history["corr_raw_gradient"]
+        diag_corr_values = history["corr_diagonal"]
+        width_raw_corr_median[width_value].append(np.median(raw_corr_values))
+        width_diag_corr_median[width_value].append(np.median(diag_corr_values))
 
 # Compute mean and std across seeds
 width_array = np.array(widths)
-median_diagonal_corr_mean = np.array(
-    [np.mean(width_diagonal_corr_median[width_value]) for width_value in widths]
+median_raw_corr_mean = np.array(
+    [np.mean(width_raw_corr_median[width_value]) for width_value in widths]
 )
-median_diagonal_corr_std = np.array(
-    [np.std(width_diagonal_corr_median[width_value]) for width_value in widths]
+median_raw_corr_std = np.array(
+    [np.std(width_raw_corr_median[width_value]) for width_value in widths]
 )
-late_diagonal_corr_mean = np.array(
-    [np.mean(width_diagonal_corr_final[width_value]) for width_value in widths]
+median_diag_corr_mean = np.array(
+    [np.mean(width_diag_corr_median[width_value]) for width_value in widths]
 )
-late_diagonal_corr_std = np.array(
-    [np.std(width_diagonal_corr_final[width_value]) for width_value in widths]
+median_diag_corr_std = np.array(
+    [np.std(width_diag_corr_median[width_value]) for width_value in widths]
 )
 
 # ======================== DEPTH SWEEP ========================
@@ -995,7 +1025,7 @@ late_diagonal_corr_std = np.array(
 
 depths = [2, 3, 4, 5, 6, 7, 8]
 depth_width = 32
-n_seeds_d = 3
+n_seeds_d = 10
 n_steps_depth = 2000
 diag_every_depth = 40
 
@@ -1003,12 +1033,12 @@ depth_neg_init = {d: [] for d in depths}
 depth_diag_init = {d: [] for d in depths}
 depth_neg_late = {d: [] for d in depths}
 depth_diag_late = {d: [] for d in depths}
+depth_neg_median = {d: [] for d in depths}
 depth_diag_median = {d: [] for d in depths}
 
 for d in depths:
     print(f"  Depth sweep: d={d} ...", flush=True)
     for seed in range(n_seeds_d):
-        np.random.seed(5000 + seed * 100 + d)
         h, _, _ = run_experiment(
             width=depth_width,
             depth=d,
@@ -1016,6 +1046,9 @@ for d in depths:
             n_steps=n_steps_depth,
             diag_every=diag_every_depth,
             full_jacobian=False,
+            network_seed=4000 + seed,
+            data_seed=5000 + seed,
+            sampling_seed=6000 + seed,
         )
         neg_vals = h["corr_raw_gradient"]
         diag_vals = h["corr_diagonal"]
@@ -1025,6 +1058,7 @@ for d in depths:
         # Late training values
         depth_neg_late[d].append(np.mean(neg_vals[-5:]))
         depth_diag_late[d].append(np.mean(diag_vals[-5:]))
+        depth_neg_median[d].append(np.median(neg_vals))
         depth_diag_median[d].append(np.median(diag_vals))
 
 d_arr = np.array(depths)
@@ -1034,90 +1068,91 @@ diag_init_mean = np.array([np.mean(depth_diag_init[d]) for d in depths])
 diag_init_std = np.array([np.std(depth_diag_init[d]) for d in depths])
 neg_late_mean = np.array([np.mean(depth_neg_late[d]) for d in depths])
 neg_late_std = np.array([np.std(depth_neg_late[d]) for d in depths])
+neg_median_mean = np.array([np.mean(depth_neg_median[d]) for d in depths])
+neg_median_std = np.array([np.std(depth_neg_median[d]) for d in depths])
 diag_late_mean = np.array([np.mean(depth_diag_late[d]) for d in depths])
 diag_late_std = np.array([np.std(depth_diag_late[d]) for d in depths])
 diag_median_mean = np.array([np.mean(depth_diag_median[d]) for d in depths])
 diag_median_std = np.array([np.std(depth_diag_median[d]) for d in depths])
 
-# Figure 2 uses the same diagonal-approximation summary for a width sweep at
-# fixed depth and a depth sweep at fixed width.
+# Figure 2 compares median raw-gradient and diagonal-approximation correlations
+# for a width sweep at fixed depth and a depth sweep at fixed width.
 figure_two, figure_two_axes = plt.subplots(
     1, 2, figsize=(7.2, 2.8), dpi=200, sharey=True
 )
 figure_two.patch.set_facecolor("#faf9f6")
 
 
-def plot_diagonal_correlation_sweep(
+def plot_correlation_sweep(
     ax,
     x_values,
-    late_mean,
-    late_std,
-    median_mean,
-    median_std,
+    raw_median_mean,
+    raw_median_std,
+    diag_median_mean,
+    diag_median_std,
 ):
     ax.fill_between(
         x_values,
-        late_mean - late_std,
-        late_mean + late_std,
+        raw_median_mean - raw_median_std,
+        raw_median_mean + raw_median_std,
         color="#d97706",
         alpha=0.15,
     )
     ax.plot(
         x_values,
-        late_mean,
+        raw_median_mean,
         "o-",
         color="#d97706",
         linewidth=1.5,
         markersize=4,
-        label=r"late training $r$",
+        label=r"raw gradient",
     )
     ax.fill_between(
         x_values,
-        median_mean - median_std,
-        median_mean + median_std,
+        diag_median_mean - diag_median_std,
+        diag_median_mean + diag_median_std,
         color="#2563eb",
         alpha=0.15,
     )
     ax.plot(
         x_values,
-        median_mean,
+        diag_median_mean,
         "s--",
         color="#2563eb",
         linewidth=1.2,
         markersize=3.5,
-        label=r"median $r$",
+        label=r"diagonal approximation",
     )
     ax.axhline(1, color="#e8e5dd", linestyle="--", linewidth=0.5)
     ax.axhline(0, color="#e8e5dd", linewidth=0.5)
     ax.tick_params(labelsize=7)
-    ax.set_ylim(0.5, 1.05)
+    ax.set_ylim(*CORRELATION_Y_LIMITS)
+    ax.set_yticks(CORRELATION_Y_TICKS)
 
 
-plot_diagonal_correlation_sweep(
+plot_correlation_sweep(
     figure_two_axes[0],
     width_array,
-    late_diagonal_corr_mean,
-    late_diagonal_corr_std,
-    median_diagonal_corr_mean,
-    median_diagonal_corr_std,
+    median_raw_corr_mean,
+    median_raw_corr_std,
+    median_diag_corr_mean,
+    median_diag_corr_std,
 )
 figure_two_axes[0].set_xscale("log", base=2)
 figure_two_axes[0].set_xticks([4, 8, 16, 32, 64, 128, 256, 512])
 figure_two_axes[0].set_xticklabels(["4", "8", "16", "32", "64", "128", "256", "512"])
 figure_two_axes[0].set_xlim(widths[0] / np.sqrt(2), widths[-1] * np.sqrt(2))
 figure_two_axes[0].set_xlabel("hidden layer width", fontsize=8)
-figure_two_axes[0].set_ylabel(
-    r"$r(\Delta A,\;-\Phi_{ii}\,\partial \mathcal{L}/\partial A_i)$", fontsize=8
-)
+figure_two_axes[0].set_ylabel(r"$r$", fontsize=8)
 figure_two_axes[0].set_title(
     "(a) Width sweep (depth = 3)", fontsize=9, fontweight="bold"
 )
 
-plot_diagonal_correlation_sweep(
+plot_correlation_sweep(
     figure_two_axes[1],
     d_arr,
-    diag_late_mean,
-    diag_late_std,
+    neg_median_mean,
+    neg_median_std,
     diag_median_mean,
     diag_median_std,
 )
@@ -1267,20 +1302,20 @@ compact_dynamics_ax_width_48.set_title(
 compact_dynamics_ax_width_48.tick_params(labelleft=False)
 
 compact_width_ax = compact_figure.add_subplot(compact_grid[3, :2])
-plot_diagonal_correlation_sweep(
+plot_correlation_sweep(
     compact_width_ax,
     width_array,
-    late_diagonal_corr_mean,
-    late_diagonal_corr_std,
-    median_diagonal_corr_mean,
-    median_diagonal_corr_std,
+    median_raw_corr_mean,
+    median_raw_corr_std,
+    median_diag_corr_mean,
+    median_diag_corr_std,
 )
 compact_width_ax.set_xscale("log", base=2)
 compact_width_ax.set_xticks([4, 8, 16, 32, 64, 128, 256, 512])
 compact_width_ax.set_xticklabels(["4", "8", "16", "32", "64", "128", "256", "512"])
 compact_width_ax.set_xlim(widths[0] / np.sqrt(2), widths[-1] * np.sqrt(2))
 compact_width_ax.set_xlabel("hidden layer width", fontsize=7)
-compact_width_ax.set_ylabel("diagonal-approx. correlation $r$", fontsize=7)
+compact_width_ax.set_ylabel(r"$r$", fontsize=7)
 compact_width_ax.set_title(
     "(k) Width sweep (depth = 3)", fontsize=8, fontweight="bold"
 )
@@ -1288,11 +1323,11 @@ compact_width_ax.set_title(
 compact_depth_ax = compact_figure.add_subplot(
     compact_grid[3, 2:], sharey=compact_width_ax
 )
-plot_diagonal_correlation_sweep(
+plot_correlation_sweep(
     compact_depth_ax,
     d_arr,
-    diag_late_mean,
-    diag_late_std,
+    neg_median_mean,
+    neg_median_std,
     diag_median_mean,
     diag_median_std,
 )
@@ -1408,7 +1443,7 @@ print("Figure 3 (depth sweep) saved.")
 
 appendix_widths = [4, 8, 12, 16, 24, 32, 48, 64, 96, 128]
 appendix_depth = 3
-n_seeds_w = 3
+n_seeds_w = 10
 n_steps_width = 1500
 diag_every_width = 40
 
@@ -1420,7 +1455,6 @@ width_diag_late = {w: [] for w in appendix_widths}
 for w in appendix_widths:
     print(f"  Appendix width sweep: w={w} ...", flush=True)
     for seed in range(n_seeds_w):
-        np.random.seed(7000 + seed * 100 + w)
         h, _, _ = run_experiment(
             width=w,
             depth=appendix_depth,
@@ -1428,6 +1462,9 @@ for w in appendix_widths:
             n_steps=n_steps_width,
             diag_every=diag_every_width,
             full_jacobian=False,
+            network_seed=7000 + seed,
+            data_seed=8000 + seed,
+            sampling_seed=9000 + seed,
         )
         neg_vals = h["corr_raw_gradient"]
         diag_vals = h["corr_diagonal"]
